@@ -9,7 +9,9 @@
 # 设计要点：解析与「切块+入库」解耦。parse_pdf 只负责「PDF→文本」，
 # 切块/写入由调用方（admin 路由）决定，方便以后接别的来源（网页/Word）。
 # ======================================================================
+import os
 import re
+import time
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -49,31 +51,60 @@ def _parse_via_pymupdf(path: str) -> str:
 
 
 def _parse_via_mineru(path: str, s) -> str:
-    """MinerU 云端 API：上传文件，取回 Markdown。
+    """MinerU 云端 API（mineru.net 官方异步两步式）：签名上传 → 轮询 → 下载 Markdown。
 
-    注意：具体请求/响应字段以 MinerU 官方 API 文档为准；这里做的是「通用形态」，
-    若你的账户返回结构不同，改下面的字段提取即可（失败会自动降级 PyMuPDF）。
+    官方流程：
+      1) POST {base}/parse/file  → 拿 task_id + 签名上传 URL（OSS）
+      2) PUT 文件到签名 URL
+      3) GET  {base}/parse/{task_id} 轮询，state=done 时取 markdown_url
+      4) GET  markdown_url 拿到最终 Markdown
+    失败（提交失败 / 解析失败 / 超时 / 空结果）都会抛异常，由 parse_pdf 自动降级到 Paddle/PyMuPDF。
     """
     import requests
-    url = s.mineru_api_url or "https://api.mineru.net/v1/file_parse"
-    with open(path, "rb") as f:
-        resp = requests.post(
-            url,
-            files={"file": f},
-            headers={"Authorization": f"Bearer {s.mineru_api_key}"},
-            timeout=180,
-        )
-    resp.raise_for_status()
-    data = resp.json()
-    # 兼容多种返回形态：{"markdown":...} / {"data":{"markdown":...}} / {"result":...}
-    md = (
-        data.get("markdown")
-        or (data.get("data") or {}).get("markdown")
-        or data.get("result")
-        or ""
+    base = (s.mineru_api_url or "https://mineru.net/api/v1/agent").rstrip("/")
+    auth = {"Authorization": f"Bearer {s.mineru_api_key}"}
+    # 1) 提交，拿 task_id + 签名上传 URL
+    submit = requests.post(
+        f"{base}/parse/file",
+        headers={**auth, "Content-Type": "application/json"},
+        json={
+            "file_name": os.path.basename(path),
+            "language": "ch",
+            "enable_table": True,
+            "is_ocr": False,        # 文本型 PDF 关 OCR 更快；扫描件可在调用处开启
+            "enable_formula": True,
+        },
+        timeout=30,
     )
-    if not md:
-        raise ValueError("MinerU 返回中没有找到 markdown 字段，请检查 API 形态")
+    submit.raise_for_status()
+    sj = submit.json()
+    if sj.get("code") != 0:
+        raise ValueError(f"MinerU 提交失败: {sj.get('msg')}")
+    task_id = sj["data"]["task_id"]
+    file_url = sj["data"]["file_url"]
+    # 2) 上传文件到签名 URL（OSS，PUT）
+    with open(path, "rb") as f:
+        up = requests.put(file_url, data=f, timeout=120)
+    up.raise_for_status()
+    # 3) 轮询任务状态（最长 4 分钟）
+    poll_url = f"{base}/parse/{task_id}"
+    deadline = time.time() + 240
+    md_url = None
+    while time.time() < deadline:
+        time.sleep(3)
+        pr = requests.get(poll_url, headers=auth, timeout=30).json()
+        st = (pr.get("data") or {}).get("state")
+        if st == "done":
+            md_url = (pr.get("data") or {}).get("markdown_url")
+            break
+        if st == "failed":
+            raise ValueError(f"MinerU 解析失败: {(pr.get('data') or {}).get('err_msg')}")
+    if not md_url:
+        raise TimeoutError("MinerU 解析超时（>240s）")
+    # 4) 下载 Markdown
+    md = requests.get(md_url, timeout=60).text
+    if not md.strip():
+        raise ValueError("MinerU 返回的 markdown 为空")
     return md
 
 
