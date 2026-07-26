@@ -100,9 +100,10 @@ def _supervisor_node(state: AssistantState) -> dict:
     q = state.get("rewritten") or state["question"]
     prompt = (
         "你是多智能体团队的主管。根据问题判断需要哪些工人来回答：\n"
-        "- retrieval：需要从简历/项目资料里找事实（如经历、技能细节、项目内容）\n"
-        "- graph：需要查实体间的关系（如'会哪些技术''做过什么项目''毕业于哪'）\n"
-        "只返回 JSON：{\"workers\":[\"retrieval\"|\"graph\"]}。可同时选多个。\n"
+        "- retrieval：几乎总是需要。因为个人经历、项目列表、技能细节、教育背景、亮点等"
+        "事实都写在简历/项目资料里，必须靠它检索。\n"
+        "- graph：仅在问题明确问「实体之间的关系/归属」时才加（如'他会哪些技术''某技术属于哪一层'）。\n"
+        "只返回 JSON：{\"workers\":[\"retrieval\"|\"graph\"]}。可同时选多个；不确定就只选 retrieval。\n"
         f"问题：{q}\nJSON："
     )
     plan = ["retrieval"]  # 默认至少检索，保证有资料可答
@@ -118,6 +119,8 @@ def _supervisor_node(state: AssistantState) -> dict:
                     plan = ["retrieval"]
     except Exception as e:
         log.warning("agent.supervisor_parse_failed", error=str(e))
+    # 兜底：检索员必须永远上工（项目/经历/技能等事实都在资料库里，图谱只补关系）
+    plan = ["retrieval"] + [w for w in plan if w != "retrieval"]
     trace = list(state.get("agent_trace") or [])
     trace.append({"agent": "主管", "detail": f"分派工人：{', '.join(plan)}"})
     return {"plan": plan, "agent_trace": trace}
