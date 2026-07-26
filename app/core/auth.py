@@ -28,16 +28,27 @@ def make_cookie_value() -> str:
     return _sign(get_settings().admin_token)
 
 
-def is_authed(admin_auth: str | None = Cookie(default=None)) -> bool:
-    """判断请求是否带有效签名 Cookie。"""
+def is_authed(admin_auth: str | None = Cookie(default=None, alias=AUTH_COOKIE)) -> bool:
+    """判断请求是否带有效签名 Cookie。
+
+    关键：alias=AUTH_COOKIE 不能省！本函数被当作 FastAPI 依赖注入时，
+    FastAPI 默认按「参数名」找 Cookie（会去找名叫 admin_auth 的 Cookie，
+    而真实 Cookie 叫 portal_admin → 永远拿不到 → 管理员 API 永远 403）。
+    alias 显式告诉 FastAPI 真正的 Cookie 名；作为普通函数直接调用时
+    （页面路由里传位置参数），alias 无影响，两种用法都正确。
+    """
     if not admin_auth:
         return False
     # compare_digest 防止时序攻击（比普通 == 更安全）
     return hmac.compare_digest(admin_auth, make_cookie_value())
 
 
-def require_admin(admin_auth: str | None = Cookie(default=None)) -> bool:
-    """FastAPI 依赖：未登录/签名失效直接返回 403。挂到管理员接口上即可。"""
+def require_admin(admin_auth: str | None = Cookie(default=None, alias=AUTH_COOKIE)) -> bool:
+    """FastAPI 依赖：未登录/签名失效直接返回 403。挂到管理员接口上即可。
+
+    同样必须 alias=AUTH_COOKIE（见 is_authed 注释），否则 API 永远 403，
+    前端收到 403 又跳登录页、登录页发现已登录又跳回 /admin → 无限刷新转圈。
+    """
     if not is_authed(admin_auth):
         raise HTTPException(status_code=403, detail="未登录或登录已失效，请先登录")
     return True
