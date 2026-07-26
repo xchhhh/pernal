@@ -40,22 +40,22 @@ GOLD = [
     },
     {
         "q": "他的求职方向是什么？",
-        "relevant_keys": ["profile", "summary"],
+        "relevant_keys": ["basics"],
         "keywords": ["AI"],
     },
     {
         "q": "这个门户网站是怎么部署的？",
-        "relevant_keys": ["deployment", "projects", "architecture"],
+        "relevant_keys": ["engineering", "tech_architecture", "projects"],
         "keywords": ["Docker", "Caddy"],
     },
     {
         "q": "RAG 检索管线包含哪些步骤？",
-        "relevant_keys": ["architecture", "projects", "doc::"],
+        "relevant_keys": ["tech_architecture", "projects", "doc::"],
         "keywords": ["检索", "rerank"],
     },
     {
         "q": "他有哪些个人优势？",
-        "relevant_keys": ["summary", "profile"],
+        "relevant_keys": ["self_eval", "basics"],
         "keywords": ["优势"],
     },
     {
@@ -72,10 +72,14 @@ def _match(ranked_ids: list[str], relevant_keys: list[str]) -> tuple[list[str], 
     宽松匹配：id 以 key 开头（如 "projects::s0p0" 匹配 "projects"）。
     返回 (映射后的排名列表, 相关集合)——直接喂给 retrieval_report。
     """
-    mapped = []
+    mapped, seen = [], set()
     for rid in ranked_ids:
         hit = next((k for k in relevant_keys if rid.startswith(k)), None)
-        mapped.append(hit if hit else rid)  # 命中→归一成 key；未命中→保留原 id
+        norm = hit if hit else rid  # 命中→归一成 key；未命中→保留原 id
+        if norm in seen:
+            continue  # 去重：同一 key 重复命中只计一次，避免 Recall/NDCG 超 1
+        seen.add(norm)
+        mapped.append(norm)
     return mapped, set(relevant_keys)
 
 
@@ -86,7 +90,8 @@ def main():
 
     # 延迟导入：这些模块要在容器/项目环境里才 import 得动
     from app.rag import api as ai_api
-    from app.rag.llm import get_embeddings, get_llm
+    from app.rag.embed import get_embeddings
+    from app.rag.llm import get_llm
     from app.rag.retrieval import compress, retrieve_with_trace
 
     ai_api.ensure_index()
