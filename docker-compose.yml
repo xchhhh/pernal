@@ -33,8 +33,8 @@ services:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL}
       - LLM_MODEL=${LLM_MODEL}
-      # Embedding（默认本地向量化；仅在有可用「文本」embedding 模型时切 cloud）
-      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-local}
+      # Embedding（默认走火山 /embeddings/multimodal 云端文本嵌入；含可用 key 即 cloud）
+      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-cloud}
       - LOCAL_EMBEDDING_MODEL=${LOCAL_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-}
