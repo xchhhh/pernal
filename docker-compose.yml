@@ -28,6 +28,7 @@ services:
       # rerank 后端：cross-encoder（本地 bge-reranker）/ llm（DeepSeek 打分降级）
       - RERANK_BACKEND=${RERANK_BACKEND:-cross-encoder}
       - HF_ENDPOINT=https://hf-mirror.com   # 国内拉 bge 模型权重（embedding/reranker）走镜像
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0} # 置 1 时纯本地缓存加载模型（VPS 访问不到 HF 镜像时必开，避免联网重试超时）
       # LLM（DeepSeek，OpenAI 兼容）
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL}
@@ -47,6 +48,7 @@ services:
     volumes:
       - app_data:/app/data                # 业务库持久化
       - app_chroma:/app/chroma_data       # 向量库持久化
+      - app_hf_cache:/root/.cache/huggingface  # bge 模型权重缓存（VPS 拉不到时靠预置，跨重建持久化）
     expose:
       - "8000"                            # 只对内网（Caddy）暴露，不映射到宿主机端口
     healthcheck:
@@ -81,5 +83,6 @@ services:
 volumes:
   app_data:
   app_chroma:
+  app_hf_cache:
   caddy_data:
   caddy_config:
