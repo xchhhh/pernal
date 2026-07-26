@@ -152,12 +152,14 @@ def ingest_pdf_to_store(path: str, source_name: str, store, persist: bool = True
     persist=True 时同时把解析文本存进 ingested_docs 表，供「重建索引」时重新切块。
     """
     text = parse_pdf(path)
+    s = get_settings()
     docs = chunk_text(
         f"doc::{source_name}",
         source_name,
         text,
-        chunk_size=get_settings().rag_chunk_size,
-        overlap=get_settings().rag_chunk_overlap,
+        parent_size=s.rag_parent_size,
+        child_size=s.rag_child_size,
+        child_overlap=s.rag_child_overlap,
     )
     store.add_documents(docs)
     if persist:

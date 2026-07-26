@@ -53,7 +53,15 @@ class Settings(BaseSettings):
     rag_top_k_vector: int = 5                        # 向量召回 Top-K
     rag_top_k_bm25: int = 5                          # BM25 关键词召回 Top-K
     rag_rrf_k: int = 60                              # RRF 倒数排名常数 k（值越大越弱化排名差异）
-    rag_rerank_top_n: int = 4                        # rerank 后保留的条数
+    rag_rerank_top_n: int = 6                        # rerank 后保留的条数（父块更大，多留点候选选优）
+
+    # ---- 父子切分（parent-child chunking）----
+    # 原 500 字滑窗把句子切散，召回的是碎片，拼进 prompt 引号都错位。
+    # 改为：子块(小)做向量/BM25 精细检索，命中后回退父块(大、完整上下文)给 LLM，
+    # 并按下父块去重——既保检索精度，又保回答连贯。
+    rag_parent_size: int = 1000     # 父块最大字符数（给 LLM 看，承载完整语义）
+    rag_child_size: int = 350      # 子块最大字符数（做 embedding / BM25 检索单元）
+    rag_child_overlap: int = 50    # 子块之间重叠字符数（避免切断词意）
     rag_enable_query_rewrite: bool = True            # 是否开启查询改写（扩写/子问题，提升召回）
     rag_enable_rerank: bool = True                   # 是否开启重排（默认开：rerank 是 RAG 质量关键一环）
     rerank_backend: str = "cross-encoder"            # 重排后端：cross-encoder（本地 bge-reranker）/ llm（用 DeepSeek 打分降级）

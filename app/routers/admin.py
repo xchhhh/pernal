@@ -130,12 +130,16 @@ async def admin_reindex(request: Request, _: bool = Depends(require_admin)):
     docs = []
     for key, sec in sections.items():
         docs.extend(chunk_section(key, sec.get("title", key), sec.get("body"),
-                                  chunk_size=s.rag_chunk_size, overlap=s.rag_chunk_overlap))
+                                  parent_size=s.rag_parent_size,
+                                  child_size=s.rag_child_size,
+                                  child_overlap=s.rag_child_overlap))
     # 2) 已上传文档（从 ingested_docs 表取原文重新切）
     with SessionLocal() as db:
         ingested = db.query(IngestedDoc).all()
     for d in ingested:
         docs.extend(chunk_text(f"doc::{d.source_name}", d.source_name, d.text,
-                               chunk_size=s.rag_chunk_size, overlap=s.rag_chunk_overlap))
+                               parent_size=s.rag_parent_size,
+                               child_size=s.rag_child_size,
+                               child_overlap=s.rag_child_overlap))
     store.add_documents(docs)
     return JSONResponse({"ok": True, "reindexed_chunks": len(docs)})

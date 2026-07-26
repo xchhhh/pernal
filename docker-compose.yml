@@ -44,6 +44,7 @@ services:
       - MINERU_API_URL=${MINERU_API_URL:-}
       - PADDLE_API_KEY=${PADDLE_API_KEY:-}
       - PADDLE_API_URL=${PADDLE_API_URL:-}
+      - PADDLE_API_SECRET=${PADDLE_API_SECRET:-}
       - RATE_LIMIT_PER_MINUTE=60
     volumes:
       - app_data:/app/data                # 业务库持久化

@@ -5,7 +5,7 @@
 # 其中 RRF 融合是纯函数（可独立单测）；涉及 LLM 的步骤运行时才调用。
 # ======================================================================
 from app.core.config import get_settings
-from app.rag.chunking import chunk_section
+from app.rag.chunking import chunk_section, collapse_to_parents
 
 
 # ----------------------------------------------------------------------
@@ -50,8 +50,12 @@ from app.rag.rerank import rerank as _rerank_impl
 # ----------------------------------------------------------------------
 # 4) 压缩：把候选块拼成受控长度的上下文
 # ----------------------------------------------------------------------
-def compress(candidates: list[dict], max_chars: int = 1500) -> str:
-    """把候选块拼成上下文文本，超长则截断到 max_chars，控制喂给 LLM 的长度与成本。"""
+def compress(candidates: list[dict], max_chars: int = 2000) -> str:
+    """把候选块拼成上下文文本，超长则截断到 max_chars，控制喂给 LLM 的长度与成本。
+
+    父子切分后，候选的 c['text'] 已是「父块」完整上下文（见 _collapse_to_parents），
+    父块比旧碎片大，故默认上限从 1500 提到 2000，让 1~2 个父块完整进上下文。
+    """
     parts = []
     total = 0
     for c in candidates:
@@ -109,9 +113,14 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
     fused = rrf_merge([vec_ids, bm25_ids], k=s.rag_rrf_k)
     trace["rrf_order"] = fused
     # (d) 用融合顺序重组候选块（去重，保留文本/元数据）
+    # 注意：向量侧元数据含 parent_text/parent_id（父子切分），BM25 侧不含；
+    # 先填向量、BM25 仅补缺，确保命中块的完整元数据不被覆盖掉。
     by_id = {}
-    for r in vec + bm25:
-        by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": r[2]}
+    for r in vec:
+        by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": dict(r[2])}
+    for r in bm25:
+        if r[0] not in by_id:
+            by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": dict(r[2])}
     ordered = [by_id[i] for i in fused if i in by_id]
     # 记录 rerank 之前的顺序（多展示几条，对比更直观）
     trace["rerank_before"] = [c["id"] for c in ordered[: s.rag_rerank_top_n * 2 + 1]]
@@ -119,5 +128,7 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
     reranked = _rerank_impl(
         question, ordered, s.rag_rerank_top_n, llm=llm if s.rag_enable_rerank else None
     )
-    trace["rerank_after"] = [c["id"] for c in reranked]
-    return reranked, trace
+    # (f) 父子切分收口：命中的子块回退为父块（完整上下文）并按父块去重
+    final = collapse_to_parents(reranked)
+    trace["rerank_after"] = [c["id"] for c in final]
+    return final, trace
