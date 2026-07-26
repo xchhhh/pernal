@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     mineru_api_key: str = ""                         # MinerU 云端 API Key（版式解析强）
     mineru_api_url: str = ""                         # MinerU API 地址（不填用官方默认）
     paddle_api_key: str = ""                         # 百度 Paddle / 百度智能云文档解析 Key（OCR 兜底）
+    paddle_api_secret: str = ""                      # 百度文档解析 Secret Key（与 Key 配套换 access_token，必填 Paddle 才可用）
     paddle_api_url: str = ""                         # 百度文档解析 API 地址（不填用官方默认）
 
     # ---- 联系表单（可选 SMTP，不配则只存库不发送）----
