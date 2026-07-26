@@ -20,6 +20,8 @@ class HybridStore:
         s = get_settings()
         # 1) Chroma 进程内持久化客户端（数据落在 chroma_persist_dir 目录）
         self._client = chromadb.PersistentClient(path=s.chroma_persist_dir)
+        self._collection_name = collection_name
+        self._embed_model_name = embed_model_name
         # 用余弦距离，语义相似度更直观。
         # 版本化：把 embedding 模型名记进 collection 元数据。
         # 若模型/维度变了（比如从假 embedding 切到真实 bge），旧集合维度不匹配会报错，
@@ -42,6 +44,30 @@ class HybridStore:
         self._fts_table = "bm25_docs"
         self._ensure_fts()
 
+    def _live(self):
+        """返回有效集合；若句柄悬空/集合已被删（如 clear 失败、进程状态错位），
+        则重建，避免 `.count()/.query()` 直接抛 NotFoundError 把整条链路 500。"""
+        try:
+            self._client.get_collection(self._collection_name)
+            return self._collection
+        except Exception:
+            try:
+                self._client.delete_collection(self._collection_name)
+            except Exception:
+                pass
+            self._collection = self._client.get_or_create_collection(
+                name=self._collection_name,
+                metadata={"hnsw:space": "cosine", "embedding_model": self._embed_model_name},
+            )
+            return self._collection
+
+    def count(self) -> int:
+        """安全取集合文档数；集合不存在时视为 0（触发重建而非报错）。"""
+        try:
+            return self._live().count()
+        except Exception:
+            return 0
+
     # ---------- 写入 ----------
     def add_documents(self, docs: list[dict]) -> None:
         """把切块后的文档写入向量库 + BM25 索引。docs=[{text, metadata}]。"""
@@ -54,7 +80,7 @@ class HybridStore:
         # 向量化（批量）
         embeds = self._embed_fn(texts)
         # 写入 Chroma（upsert：重复 id 覆盖，支持重建索引）
-        self._collection.upsert(
+        self._live().upsert(
             ids=ids, documents=texts, metadatas=metas, embeddings=embeds
         )
         # 写入 FTS5 供关键词召回
@@ -64,7 +90,7 @@ class HybridStore:
     def vector_search(self, text: str, k: int) -> list[tuple]:
         """返回 [(id, document, metadata, distance)] 按相似度升序。"""
         emb = self._embed_fn([text])[0]
-        res = self._collection.query(query_embeddings=[emb], n_results=k)
+        res = self._live().query(query_embeddings=[emb], n_results=k)
         ids = res["ids"][0]
         docs = res["documents"][0]
         metas = res["metadatas"][0]
@@ -117,13 +143,14 @@ class HybridStore:
     # ---------- 清空（重建索引用）----------
     def clear(self) -> None:
         """清空向量集合与 BM25 表，供「重建索引」时先清后写，避免重复。"""
-        # 删掉旧集合再重建（collection 名不变，调用方持有的 store 对象仍有效）
+        # 删掉旧集合再重建（保留 embedding_model 元数据，避免维度校验错位）
         try:
-            self._client.delete_collection(self._collection.name)
+            self._client.delete_collection(self._collection_name)
         except Exception:
             pass
         self._collection = self._client.get_or_create_collection(
-            name=self._collection.name, metadata={"hnsw:space": "cosine"}
+            name=self._collection_name,
+            metadata={"hnsw:space": "cosine", "embedding_model": self._embed_model_name},
         )
         with engine.begin() as conn:
             conn.exec_driver_sql(f"DELETE FROM {self._fts_table}")

@@ -1,39 +1,73 @@
 # ======================================================================
-# 切块（chunking）：把结构化的板块内容拍平成可检索的文本块
+# 切块（chunking）：把结构化的板块内容转成「连贯可读文本」再做父子切分
 #
 # 为什么单独成文件：切块策略直接影响 RAG 召回质量，是独立可测的纯逻辑。
-# 这里用「先按字段拍平，再做滑动窗口」的简单稳健策略，
-# 适合个人站这种体量小、内容不超长的数据。
+#
+# 关键设计（踩坑后修订）：
+#   旧版先 `_flatten_body` 把结构化数据拍成「一个键:值一行」的原子叶子
+#   （如 "role：AI 应用开发"），再对每个叶子单独做父子切分 —— 因为每片都
+#   远小于父块尺寸，父块==叶子本身，父子切分完全失效，且检索只能捞到
+#   零散碎片，拼进 prompt 时引号散架、还漏掉其他项目。
+#   新版改为：先把整个板块序列化成「连贯段落」（保留层级、不拆散），
+#   再对这段连贯文本做父子切分 —— 子块做精细检索，命中后回退到「包含
+#   整个板块/项目」的父块给 LLM，召回连贯、不再丢信息。
 # ======================================================================
 import re
 
+# 键名→中文标签：序列化板块时把原始字段名翻成可读标签，
+# 让 LLM 读到的上下文更自然（如 "name：…" → "项目名：…"）。
+_KEY_LABELS = {
+    "name": "项目名", "role": "角色", "stack": "技术栈", "highlights": "亮点",
+    "languages": "语言", "frameworks": "框架", "ai_stack": "AI 栈",
+    "tools": "工具", "cloud": "云", "finetune": "微调", "vector_db": "向量库",
+    "school": "学校", "major": "专业", "degree": "学历", "duration": "时间",
+    "courses": "课程", "honors": "荣誉",
+    "summary": "总结", "strengths": "优势",
+    "github": "GitHub", "blog": "博客", "opensource": "开源",
+    "layers": "层级", "note": "备注",
+    "cicd": "CI/CD", "observability": "可观测性", "security": "安全",
+    "headline": "标语", "target_role": "求职方向", "location": "地点", "tagline": "简介",
+    "layer": "层", "tech": "技术", "subject": "主体", "relation": "关系", "obj": "客体",
+}
 
-def _flatten_body(body) -> list[str]:
-    """把板块的 JSON 正文拍平成若干段文本。
+
+def _inline(v) -> str:
+    """把列表/字典压成一行可读文本（用于板块序列化，不拆成独立叶子）。"""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, list):
+        return "、".join(_inline(x) for x in v)
+    if isinstance(v, dict):
+        return "；".join(f"{_KEY_LABELS.get(k, k)}：{_inline(val)}" for k, val in v.items())
+    return str(v)
+
+
+def _section_to_text(body) -> str:
+    """把板块正文序列化成一段连贯可读文本（保留层级，但不拍散成原子叶子）。
 
     支持三种形态：
       - 字符串：直接一段
-      - 列表：每个元素再递归拍平
-      - 字典：把「键: 值」拼成一个可读句（如 "技术栈: Python, FastAPI"）
+      - 列表：每个元素序列化后换行拼接（如多个项目各自成段）
+      - 字典：把「键: 值」拼成可读句（值为列表/字典时压成一行，不拆散）
     """
     if body is None:
-        return []
+        return ""
     if isinstance(body, str):
-        return [body] if body.strip() else []
+        return body.strip()
     if isinstance(body, list):
-        out = []
-        for item in body:
-            out.extend(_flatten_body(item))
-        return out
+        parts = [_section_to_text(item) for item in body]
+        return "\n".join(p for p in parts if p)
     if isinstance(body, dict):
-        out = []
-        for key, val in body.items():
-            flat = _flatten_body(val)
-            for f in flat:
-                out.append(f"{key}：{f}")
-        return out
+        lines = []
+        for k, v in body.items():
+            label = _KEY_LABELS.get(k, k)
+            if isinstance(v, (list, dict)):
+                lines.append(f"{label}：{_inline(v)}")
+            else:
+                lines.append(f"{label}：{v}")
+        return "\n".join(lines)
     # 其它类型（数字等）转字符串
-    return [str(body)]
+    return str(body)
 
 
 def _sliding_window(text: str, chunk_size: int, overlap: int) -> list[str]:
@@ -102,14 +136,20 @@ def chunk_section(
 ) -> list[dict]:
     """把一个板块切成「父子」检索块，返回 [{text, metadata}]。
 
+    设计：先把整个板块序列化成「连贯段落」（保留层级不拆散），
+    再对这段连贯文本做父子切分 —— 父块即包含整个板块的大块，
+    命中子块后回退到父块，LLM 拿到的是连贯完整上下文，不再丢信息。
     metadata 带 section_key / title / doc_id（子块）/ parent_id / parent_text（父块）。
     """
-    docs = []
-    for idx, segment in enumerate(_flatten_body(body)):
-        docs.extend(_parent_child_chunks(
-            segment, parent_size, child_size, child_overlap, section_key, title, idx
-        ))
-    return docs
+    text = _section_to_text(body)
+    if not text:
+        return []
+    # 标题作为整段语义前缀，帮助检索定位板块
+    full = f"{title}\n{text}" if title else text
+    # 整段作为「父块」切分；> parent_size 时滑窗成多个父块（每个仍是连贯大块）
+    return _parent_child_chunks(
+        full, parent_size, child_size, child_overlap, section_key, title, 0
+    )
 
 
 def chunk_text(

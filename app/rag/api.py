@@ -61,7 +61,7 @@ def _get_store() -> HybridStore:
 def ensure_index() -> None:
     """首次使用时把 9 板块切块写进向量库+BM25；已建过就跳过。"""
     store = _get_store()
-    if store._collection.count() > 0:
+    if store.count() > 0:
         return
     sections = content.get_all_sections()
     s = get_settings()
