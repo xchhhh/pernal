@@ -23,9 +23,13 @@ def _tpl(request: Request):
     return request.app.state.templates
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/home", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
-    """首页：Hero + 能力亮点 + 技术栈 + 项目速览。"""
+    """门户首页：Hero + 能力亮点 + 技术栈 + 项目速览。
+
+    说明：站点主入口 / 已改为 AI 问答主界面（ChatGPT 式布局，见 routers/assistant.py），
+    传统门户首页挪到 /home，从问答页侧栏「门户首页」进入。
+    """
     sections = content.get_all_sections()
     return _tpl(request).TemplateResponse(
         request,                       # Starlette 1.x：request 必须放第一个

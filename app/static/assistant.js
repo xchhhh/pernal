@@ -1,56 +1,153 @@
 // ======================================================================
-// 助手对话前端：用 fetch + ReadableStream 解析 SSE，实现打字机式流式回答。
-// 零依赖（原生 JS），可直接被浏览器运行，不需打包构建。
+// AI 问答主界面前端（ChatGPT 式）
+// 功能：
+//   1) 多会话管理：历史会话存 localStorage，侧栏可切换/删除，新对话一键开；
+//   2) 流式问答：fetch + ReadableStream 解析 SSE（trace 思考面板 + token 打字机）；
+//   3) 极简 Markdown 渲染（加粗 / 行内代码 / 无序列表），回答更美观；
+//   4) 移动端抽屉侧栏；深浅色与门户共用 localStorage 的 'theme' 键。
+// 零依赖原生 JS，无需打包构建。
 // ======================================================================
 (function () {
   "use strict";
 
+  var STORAGE_KEY = "portal_convs_v1";
+
+  // ---------- DOM ----------
   var logEl = document.getElementById("chat-log");
   var welcomeEl = document.getElementById("welcome");
   var inputEl = document.getElementById("chat-input");
   var sendBtn = document.getElementById("send-btn");
-  var busy = false;           // 是否正在等待回答（防重复发送）
-  var currentAnswerEl = null; // 当前助手消息的「回答文本容器」
+  var convListEl = document.getElementById("conv-list");
+  var topbarTitle = document.getElementById("topbar-title");
+  var sidebar = document.getElementById("sidebar");
+  var overlay = document.getElementById("sidebar-overlay");
+  var menuBtn = document.getElementById("menu-btn");
 
-  // ---------- 主题切换（与门户其它页面共用 localStorage 的 'theme' 键）----------
+  // ---------- 状态 ----------
+  var convs = loadConvs();      // [{id, title, messages:[{role,text,trace}]}]
+  var currentId = null;         // 当前会话 id（null = 新对话欢迎态）
+  var busy = false;
+  var currentAnswerEl = null;   // 正在流式写入的助手消息容器
+  var currentTrace = null;      // 正在生成的消息的思考轨迹
+
+  // ================= 会话持久化 =================
+  function loadConvs() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch (e) { return []; }
+  }
+  function saveConvs() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(convs.slice(0, 30))); } catch (e) {}
+  }
+  function currentConv() {
+    for (var i = 0; i < convs.length; i++) if (convs[i].id === currentId) return convs[i];
+    return null;
+  }
+
+  // ================= 侧栏会话列表 =================
+  function renderConvList() {
+    convListEl.innerHTML = "";
+    if (!convs.length) {
+      convListEl.innerHTML = '<div class="conv-empty">暂无历史会话</div>';
+      return;
+    }
+    convs.forEach(function (c) {
+      var item = document.createElement("button");
+      item.type = "button";
+      item.className = "conv-item" + (c.id === currentId ? " active" : "");
+      var title = document.createElement("span");
+      title.className = "conv-title";
+      title.textContent = c.title;
+      var del = document.createElement("span");
+      del.className = "conv-del";
+      del.textContent = "✕";
+      del.title = "删除会话";
+      del.setAttribute("role", "button");
+      del.setAttribute("aria-label", "删除会话 " + c.title);
+      del.onclick = function (e) {
+        e.stopPropagation();
+        convs = convs.filter(function (x) { return x.id !== c.id; });
+        saveConvs();
+        if (currentId === c.id) newChat();
+        renderConvList();
+      };
+      item.appendChild(title);
+      item.appendChild(del);
+      item.onclick = function () { selectConv(c.id); closeDrawer(); };
+      convListEl.appendChild(item);
+    });
+  }
+
+  function selectConv(id) {
+    currentId = id;
+    var c = currentConv();
+    logEl.innerHTML = "";
+    welcomeEl.style.display = "none";
+    topbarTitle.textContent = c ? c.title : "新对话";
+    if (c) c.messages.forEach(function (m) { addMessage(m.role, m.text, m.trace); });
+    renderConvList();
+    scrollBottom();
+  }
+
+  function newChat() {
+    if (busy) return;
+    currentId = null;
+    logEl.innerHTML = "";
+    welcomeEl.style.display = "";
+    topbarTitle.textContent = "新对话";
+    renderConvList();
+    inputEl.focus();
+  }
+
+  // ================= 主题切换 =================
   var root = document.documentElement;
-  var saved = localStorage.getItem("theme");
-  if (saved) root.setAttribute("data-theme", saved);
-  document.getElementById("theme-toggle-chat").onclick = function () {
+  var themeBtn = document.getElementById("theme-toggle-chat");
+  function syncThemeBtn() {
+    themeBtn.textContent = (root.getAttribute("data-theme") === "dark" ? "☀️" : "🌙") + " 切换主题";
+  }
+  var savedTheme = localStorage.getItem("theme");
+  if (savedTheme) root.setAttribute("data-theme", savedTheme);
+  syncThemeBtn();
+  themeBtn.onclick = function () {
     var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
     root.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-    this.textContent = next === "dark" ? "☀️" : "🌙";
+    syncThemeBtn();
   };
 
-  // ---------- 输入框：自动撑高 + Enter 发送 ----------
+  // ================= 移动端抽屉 =================
+  function openDrawer() {
+    sidebar.classList.add("open");
+    overlay.hidden = false;
+    menuBtn.setAttribute("aria-expanded", "true");
+  }
+  function closeDrawer() {
+    sidebar.classList.remove("open");
+    overlay.hidden = true;
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+  menuBtn.onclick = function () {
+    sidebar.classList.contains("open") ? closeDrawer() : openDrawer();
+  };
+  overlay.onclick = closeDrawer;
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeDrawer();
+  });
+
+  // ================= 输入框 =================
   inputEl.addEventListener("input", function () {
     this.style.height = "auto";
-    this.style.height = Math.min(this.scrollHeight, 160) + "px";
+    this.style.height = Math.min(this.scrollHeight, 180) + "px";
   });
   inputEl.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
   sendBtn.onclick = send;
-
-  // 建议问题：点击直接发送
+  document.getElementById("new-chat").onclick = function () { newChat(); closeDrawer(); };
   document.querySelectorAll(".suggest").forEach(function (b) {
-    b.onclick = function () {
-      inputEl.value = b.textContent;
-      send();
-    };
+    b.onclick = function () { inputEl.value = b.textContent; send(); };
   });
 
-  document.getElementById("new-chat").onclick = function () {
-    if (busy) return;
-    logEl.innerHTML = "";
-    welcomeEl.style.display = "";
-  };
-
-  // ---------- 发送 ----------
+  // ================= 发送 + SSE 流式 =================
   function send() {
     var text = inputEl.value.trim();
     if (!text || busy) return;
@@ -60,12 +157,25 @@
     inputEl.value = "";
     inputEl.style.height = "auto";
 
-    // 1) 用户气泡
+    // 新对话：首条消息时才真正建会话（标题取问题前 22 字）
+    if (!currentId) {
+      currentId = "c" + Date.now();
+      var title = text.length > 22 ? text.slice(0, 22) + "…" : text;
+      convs.unshift({ id: currentId, title: title, messages: [] });
+      topbarTitle.textContent = title;
+    }
+    var conv = currentConv();
+
+    // 1) 用户消息
     addMessage("user", text);
-    // 2) 助手气泡（先空，带光标），并记下回答容器
+    if (conv) { conv.messages.push({ role: "user", text: text }); saveConvs(); }
+
+    // 2) 助手占位消息（闪烁光标）
     var refs = addMessage("assistant", "");
     currentAnswerEl = refs.answer;
-    refs.bubble.classList.add("empty"); // 显示闪烁光标
+    currentTrace = null;
+    refs.bubble.classList.add("empty");
+    renderConvList();
 
     // 3) 流式请求
     fetch("/api/assistant/chat", {
@@ -75,9 +185,7 @@
     })
       .then(function (resp) {
         if (!resp.ok) {
-          return resp.text().then(function (t) {
-            throw new Error("HTTP " + resp.status + " " + t);
-          });
+          return resp.text().then(function (t) { throw new Error("HTTP " + resp.status + " " + t); });
         }
         var reader = resp.body.getReader();
         var decoder = new TextDecoder();
@@ -90,7 +198,7 @@
             while ((idx = buf.indexOf("\n\n")) !== -1) {
               var block = buf.slice(0, idx);
               buf = buf.slice(idx + 2);
-              handleBlock(block);
+              handleBlock(block, refs.bubble);
             }
             return pump();
           });
@@ -98,18 +206,30 @@
         return pump();
       })
       .catch(function (err) {
-        if (currentAnswerEl) currentAnswerEl.textContent += "\n[出错了：" + err.message + "]";
+        if (currentAnswerEl) {
+          currentAnswerEl.dataset.raw = (currentAnswerEl.dataset.raw || "") + "\n[出错了：" + err.message + "]";
+          renderAnswer(currentAnswerEl);
+        }
       })
       .finally(function () {
-        if (refs.bubble) refs.bubble.classList.remove("empty");
+        refs.bubble.classList.remove("empty");
+        // 持久化助手消息（含思考轨迹，供会话重放时还原面板）
+        if (conv && currentAnswerEl) {
+          conv.messages.push({
+            role: "assistant",
+            text: currentAnswerEl.dataset.raw || "",
+            trace: currentTrace,
+          });
+          saveConvs();
+        }
         busy = false;
         sendBtn.disabled = false;
+        renderConvList();
         scrollBottom();
       });
   }
 
-  // ---------- 解析一段 SSE（event:/data: 两行）----------
-  function handleBlock(block) {
+  function handleBlock(block, bubble) {
     var event = "message", data = "";
     block.split("\n").forEach(function (line) {
       if (line.indexOf("event:") === 0) event = line.slice(6).trim();
@@ -117,37 +237,46 @@
     });
     if (!data) return;
     try {
-      if (event === "trace") renderTrace(JSON.parse(data));
-      else if (event === "token") appendToken(data);
-      // done 事件无需处理（finally 会收尾）
-    } catch (e) {
-      /* 忽略单条解析失败 */
-    }
+      if (event === "trace") {
+        currentTrace = JSON.parse(data);
+        renderTrace(currentTrace, bubble);
+      } else if (event === "token") {
+        appendToken(data);
+      }
+    } catch (e) { /* 忽略单条解析失败 */ }
   }
 
   function appendToken(t) {
-    if (currentAnswerEl) currentAnswerEl.textContent += t;
+    if (!currentAnswerEl) return;
+    currentAnswerEl.dataset.raw = (currentAnswerEl.dataset.raw || "") + t;
+    renderAnswer(currentAnswerEl);
     scrollBottom();
   }
 
-  // ---------- 渲染「思考过程」面板 ----------
-  function renderTrace(t) {
-    if (!t || !currentAnswerEl) return;
-    var bubble = currentAnswerEl.closest(".bubble");
-    if (!bubble) return;
-    if (bubble.querySelector(".trace")) return; // 只渲染一次
+  // ================= 渲染 =================
+  // 极简 Markdown：先转义 HTML，再处理 **加粗**、`行内代码`、- 无序列表
+  function mdToHtml(raw) {
+    var esc = raw.replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+    esc = esc.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    esc = esc.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    esc = esc.replace(/^[-•]\s+(.+)$/gm, "<span class='li'>• $1</span>");
+    return esc;
+  }
+  function renderAnswer(el) { el.innerHTML = mdToHtml(el.dataset.raw || ""); }
 
-    var html = '<details class="trace" open><summary>🧠 思考过程（查询改写 / 多智能体 / 检索 / rerank）</summary>';
+  function renderTrace(t, bubble) {
+    if (!t || !bubble || bubble.querySelector(".trace")) return;
+    bubble.insertAdjacentHTML("beforeend", traceHTML(t));
+  }
 
-    // 查询改写
-    if (t.rewritten) {
-      html += row("查询改写", "<code>" + esc(t.rewritten) + "</code>");
-    }
-    // 主管分派
+  function traceHTML(t) {
+    var html = '<details class="trace"><summary>🧠 思考过程（查询改写 / 多智能体 / 混合检索 / RRF / rerank）</summary>';
+    if (t.rewritten) html += row("查询改写", "<code>" + esc(t.rewritten) + "</code>");
     if (t.plan && t.plan.length) {
-      html += row("主管分派工人", t.plan.map(function (p) { return "<code>" + esc(p) + "</code>"; }).join(" "));
+      html += row("主管分派", t.plan.map(function (p) { return "<code>" + esc(p) + "</code>"; }).join(" "));
     }
-    // agent 协作日志
     if (t.agent_trace && t.agent_trace.length) {
       html += '<div class="trace-row"><span class="trace-label">多智能体协作：</span><ul>';
       t.agent_trace.forEach(function (s) {
@@ -155,26 +284,23 @@
       });
       html += "</ul></div>";
     }
-    // 检索轨迹
     var r = t.retrieval || {};
     if (r.vector_top || r.bm25_top) {
       html += row("混合检索",
         "向量召回 " + (r.vector_top || []).length + " 条 + BM25 召回 " + (r.bm25_top || []).length + " 条 → RRF 融合");
       if (r.rerank_before && r.rerank_after) {
-        html += row("rerank 重排前→后",
-          short(r.rerank_before) + " → " + short(r.rerank_after));
+        html += row("rerank 重排前→后", short(r.rerank_before) + " → " + short(r.rerank_after));
       }
     }
-    // 图谱命中
     if (t.graph_triples && t.graph_triples.length) {
       html += '<div class="trace-row"><span class="trace-label">图谱关系命中：</span><ul>';
       t.graph_triples.slice(0, 6).forEach(function (g) {
         html += "<li>" + esc(g.subject) + " —" + esc(g.relation) + "→ " + esc(g.obj) + "</li>";
       });
+      if (t.graph_triples.length > 6) html += "<li>…共 " + t.graph_triples.length + " 条</li>";
       html += "</ul></div>";
     }
-    html += "</details>";
-    bubble.insertAdjacentHTML("beforeend", html);
+    return html + "</details>";
   }
 
   function row(label, val) {
@@ -189,8 +315,7 @@
     });
   }
 
-  // ---------- 工具 ----------
-  function addMessage(role, text) {
+  function addMessage(role, text, trace) {
     var msg = document.createElement("div");
     msg.className = "msg " + role;
     var avatar = document.createElement("div");
@@ -200,16 +325,24 @@
     bubble.className = "bubble";
     var answer = document.createElement("div");
     answer.className = "answer";
-    answer.textContent = text;
+    answer.dataset.raw = text || "";
+    renderAnswer(answer);
     bubble.appendChild(answer);
     msg.appendChild(avatar);
     msg.appendChild(bubble);
     logEl.appendChild(msg);
+    if (trace) renderTrace(trace, bubble);   // 会话重放时还原思考面板
     scrollBottom();
     return { bubble: bubble, answer: answer };
   }
+
   function scrollBottom() {
     var main = document.getElementById("chat-main");
     main.scrollTop = main.scrollHeight;
   }
+
+  // ================= 启动 =================
+  renderConvList();
+  if (convs.length) selectConv(convs[0].id);   // 默认打开最近会话
+  inputEl.focus();
 })();

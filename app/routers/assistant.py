@@ -14,7 +14,7 @@ import json
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import get_settings
@@ -26,17 +26,23 @@ from app.rag.llm import get_llm
 router = APIRouter()
 
 
-@router.get("/assistant", response_class=HTMLResponse)
-async def assistant_page(request: Request) -> HTMLResponse:
-    """个人助手问答页（ChatGPT 式流式对话 UI）。
+@router.get("/", response_class=HTMLResponse)
+async def assistant_home(request: Request) -> HTMLResponse:
+    """站点主入口 = AI 问答主界面（ChatGPT 式：左侧边栏 + 主问答区）。
 
-    渲染 app/templates/assistant.html；真正的数据流走 POST /api/assistant/chat 的 SSE。
+    用户要求「问答作为主界面」，故 / 直接渲染对话页；传统门户首页保留在 /home。
     """
     return request.app.state.templates.TemplateResponse(
         request,
         "assistant.html",
         {"request": request},
     )
+
+
+@router.get("/assistant")
+async def assistant_alias() -> RedirectResponse:
+    """/assistant 统一 301 到主入口 /，避免同一页面两个地址。"""
+    return RedirectResponse(url="/", status_code=301)
 
 
 class AssistantRequest(BaseModel):

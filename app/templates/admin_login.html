@@ -3,24 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>管理员登录</title>
+  <title>管理员登录 · 许成合的 AI 助手</title>
   <link rel="stylesheet" href="/static/base.css">
   <style>
-    .login-wrap { max-width: 380px; margin: 12vh auto; }
-    .login-wrap input { width: 100%; padding: 0.6rem; margin: 0.6rem 0;
-      border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
-    .login-wrap button { width: 100%; background: var(--primary); color: var(--primary-text);
-      border: none; border-radius: 8px; padding: 0.6rem; cursor: pointer; }
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-wrap { width: 100%; max-width: 380px; padding: 0 1rem; }
+    .login-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 2rem 1.75rem;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+    }
+    .login-logo {
+      width: 48px; height: 48px; margin: 0 auto 0.9rem; border-radius: 13px;
+      background: var(--primary); color: var(--primary-text);
+      display: flex; align-items: center; justify-content: center; font-size: 1.5rem;
+    }
+    .login-card h1 { font-size: 1.25rem; text-align: center; margin: 0 0 0.3rem; }
+    .login-sub { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 0 0 1.4rem; }
+    .login-error {
+      background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
+      border-radius: 9px; padding: 0.55rem 0.8rem; font-size: 0.85rem;
+      margin-bottom: 0.9rem; text-align: center;
+    }
+    [data-theme="dark"] .login-error { background: rgba(220,38,38,.12); border-color: rgba(220,38,38,.35); color: #fca5a5; }
+    .login-card input {
+      width: 100%; padding: 0.65rem 0.8rem; margin-bottom: 0.8rem;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg); color: var(--text); font: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .login-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+    .login-card button {
+      width: 100%; background: var(--primary); color: var(--primary-text);
+      border: none; border-radius: 10px; padding: 0.65rem; cursor: pointer;
+      font: inherit; font-weight: 600; transition: opacity .15s;
+    }
+    .login-card button:hover { opacity: .92; }
+    .login-hint { text-align: center; color: var(--muted); font-size: 0.76rem; margin-top: 1rem; }
+    .back-home { display: block; text-align: center; margin-top: 0.8rem; color: var(--muted); font-size: 0.82rem; text-decoration: none; }
+    .back-home:hover { color: var(--primary); }
   </style>
 </head>
 <body>
-  <div class="login-wrap card">
-    <h2>管理员登录</h2>
-    <form method="post" action="/api/admin/login">
-      <input type="password" name="token" placeholder="管理员口令" required autofocus>
-      <button type="submit">登录</button>
-    </form>
-    <p class="chat-hint">口令在 .env 的 ADMIN_TOKEN 配置（默认 admin123，生产请尽快改成随机长串）</p>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo" aria-hidden="true">🛠</div>
+      <h1>管理员登录</h1>
+      <p class="login-sub">管理知识库 · 上传 PDF 实时更新向量库</p>
+      {% if error %}
+      <div class="login-error" role="alert">口令错误，请重试</div>
+      {% endif %}
+      <form method="post" action="/api/admin/login">
+        <input type="password" name="token" placeholder="管理员口令" required autofocus aria-label="管理员口令">
+        <button type="submit">登 录</button>
+      </form>
+      <p class="login-hint">口令在 .env 的 ADMIN_TOKEN 配置（默认 admin123，生产请改成随机长串）</p>
+      <a class="back-home" href="/">← 返回问答主页</a>
+    </div>
   </div>
+  <script>
+    // 与全站主题保持一致
+    (function () {
+      var t = localStorage.getItem("theme");
+      if (t) document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
 </body>
 </html>

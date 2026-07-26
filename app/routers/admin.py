@@ -12,7 +12,7 @@ import tempfile
 from fastapi import APIRouter, Depends, Form, Query, Request, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.core.auth import AUTH_COOKIE, make_cookie_value, require_admin
+from app.core.auth import AUTH_COOKIE, is_authed, make_cookie_value, require_admin
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.data.models import IngestedDoc
@@ -31,27 +31,38 @@ def _tpl(request: Request):
 
 # ---------- 登录 ----------
 @router.get("/admin/login", response_class=HTMLResponse)
-async def admin_login_page(request: Request):
-    """登录页（未登录时访问 /admin 会被重定向到这里）。"""
-    return _tpl(request).TemplateResponse(request, "admin_login.html", {"request": request})
+async def admin_login_page(request: Request, error: int = Query(default=0)):
+    """登录页。已登录就直接进后台；error=1 时展示「口令错误」提示。"""
+    if is_authed(request.cookies.get(AUTH_COOKIE)):
+        return RedirectResponse(url="/admin", status_code=303)
+    return _tpl(request).TemplateResponse(
+        request, "admin_login.html", {"request": request, "error": bool(error)}
+    )
 
 
 @router.post("/api/admin/login")
 async def admin_login(request: Request, token: str = Form(...)):
-    """校验管理员口令；正确则下发签名 Cookie 并跳到后台。"""
+    """校验管理员口令；正确则下发签名 Cookie 并跳到后台；错误回登录页并带提示。"""
     s = get_settings()
     if token != s.admin_token:
-        return HTMLResponse("<h3 style='color:red'>口令错误</h3><a href='/admin/login'>返回</a>", status_code=401)
+        # 303 重定向回登录页（带 error 标记），比裸 HTML 报错友好
+        return RedirectResponse(url="/admin/login?error=1", status_code=303)
     resp = RedirectResponse(url="/admin", status_code=303)
     # httpOnly + SameSite=Lax：防 XSS 读 Cookie、防 CSRF 简单攻击
     resp.set_cookie(AUTH_COOKIE, make_cookie_value(), httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
     return resp
 
 
-# ---------- 后台主页（需登录）----------
+# ---------- 后台主页（页面：未登录先跳登录页，不再吐裸 JSON）----------
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_home(request: Request, _: bool = Depends(require_admin)):
-    """后台主页：上传表单 + 已索引来源列表。"""
+async def admin_home(request: Request):
+    """后台主页：上传表单 + 已索引来源列表。
+
+    页面访问场景：未登录 303 跳 /admin/login（浏览器地址栏直达 /admin 时不再看到
+    {"detail":"未登录..."} 的裸 JSON）。API 场景（/api/admin/*）仍用 require_admin 返 403。
+    """
+    if not is_authed(request.cookies.get(AUTH_COOKIE)):
+        return RedirectResponse(url="/admin/login", status_code=303)
     with SessionLocal() as db:
         docs = db.query(IngestedDoc).order_by(IngestedDoc.created_at.desc()).all()
         sources = [
