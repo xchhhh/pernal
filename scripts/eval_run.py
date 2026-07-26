@@ -101,7 +101,10 @@ def main():
     for item in GOLD:
         q = item["q"]
         candidates, trace = retrieve_with_trace(q, store, emb, llm)
-        ranked = trace.get("ranked_ids") or []
+        # 新版 trace 直接带 ranked_ids；旧版没有 → 从最终候选块推导（兼容 before 基线评测）
+        ranked = trace.get("ranked_ids") or [
+            (c.get("metadata") or {}).get("parent_id") or c["id"] for c in candidates
+        ]
         mapped, rel = _match(ranked, item["relevant_keys"])
         rr = retrieval_report(mapped, rel, ks=(3, 5))
         rr["q"] = q
