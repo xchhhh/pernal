@@ -121,7 +121,7 @@ async def admin_reindex(request: Request, _: bool = Depends(require_admin)):
 
     适用场景：改了简历内容、或上传了新文档想整体刷新时一键重建。
     """
-    await ai_api.ensure_index()  # 确保 store 已初始化
+    ai_api.ensure_index()  # 确保 store 已初始化（同步函数，勿 await）
     store = ai_api._get_store()
     store.clear()
     # 1) 9 个板块
