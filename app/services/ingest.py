@@ -169,3 +169,29 @@ def ingest_pdf_to_store(path: str, source_name: str, store, persist: bool = True
             db.add(IngestedDoc(source_name=source_name, text=text, chunk_count=len(docs)))
             db.commit()
     return len(docs), text
+
+
+def ingest_text_to_store(source_name: str, text: str, store, persist: bool = True) -> tuple[int, str]:
+    """把一段「已提取的文本」（代码 / Markdown / 文档）切块并实时写入向量库。
+
+    与 ingest_pdf_to_store 的区别：跳过 PDF 解析，直接吃纯文本。
+    供「项目代码 / 项目资料」入库用——每个文件作为一个 IngestedDoc 持久化，
+    立即可被问答检索；重建索引时也会重新切块（与 PDF 上传走同一张表）。
+    """
+    s = get_settings()
+    docs = chunk_text(
+        f"doc::{source_name}",
+        source_name,
+        text,
+        parent_size=s.rag_parent_size,
+        child_size=s.rag_child_size,
+        child_overlap=s.rag_child_overlap,
+    )
+    store.add_documents(docs)
+    if persist:
+        from app.core.db import SessionLocal
+        from app.data.models import IngestedDoc
+        with SessionLocal() as db:
+            db.add(IngestedDoc(source_name=source_name, text=text, chunk_count=len(docs)))
+            db.commit()
+    return len(docs), text

@@ -7,9 +7,10 @@
 # 这是「个人站 + 单管理员」场景下的极简方案，不引用户表/JWT。
 # ======================================================================
 import os
+import pathlib
 import tempfile
 
-from fastapi import APIRouter, Depends, Form, Query, Request, Response, UploadFile, File
+from fastapi import APIRouter, Body, Depends, Form, Query, Request, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.core.auth import AUTH_COOKIE, is_authed, make_cookie_value, require_admin
@@ -19,7 +20,19 @@ from app.data.models import IngestedDoc
 from app.rag import api as ai_api          # 复用 _get_store / ensure_index
 from app.rag.chunking import chunk_section, chunk_text
 from app.services import content
-from app.services.ingest import ingest_pdf_to_store
+from app.services.ingest import ingest_pdf_to_store, ingest_text_to_store
+
+# 入库白名单：只收这些扩展名的文本文件，避免把二进制/密钥塞进向量库
+_INGEST_ALLOWED_EXT = {
+    ".py", ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".html",
+    ".css", ".js", ".sh", ".cfg", ".ini", ".dockerfile", ".env.example",
+}
+# 噪声目录：递归遍历时跳过（调试缓存/依赖/密钥/版本控制）
+_INGEST_SKIP_DIRS = {
+    ".git", "__pycache__", ".pytest_cache", ".workbuddy", "node_modules",
+    ".venv", "venv", "ai_portal.egg-info", ".github",
+}
+_INGEST_MAX_BYTES = 256_000  # 单文件上限 ~256KB，跳过超大文件
 
 router = APIRouter()
 
@@ -100,6 +113,82 @@ async def admin_upload(
             os.remove(tmp.name)
         except Exception:
             pass
+
+
+# ---------- 入库「项目代码 / 项目资料」（需登录）：直接向量化进网站 ----------
+@router.post("/api/admin/ingest-paths")
+async def admin_ingest_paths(
+    request: Request,
+    _: bool = Depends(require_admin),
+    body: dict = Body(default={}),
+):
+    """把指定路径（容器内文件/目录）的「项目代码 / 项目资料」向量化入库。
+
+    请求体：{"paths": ["/app/app", "/app/requirements_plan.md", ...]}
+      - 目录：递归遍历，只收白名单扩展名、排除噪声目录、跳过超大文件；
+      - 文件：直接读；
+    每个文件作为一个 IngestedDoc 持久化，并实时写入向量库（Chroma+BM25），
+    立即可被问答检索。所有路径必须位于 /app 内（防越权读系统文件）。
+    """
+    paths = body.get("paths") or []
+    root = pathlib.Path("/app")
+    store = ai_api._get_store()
+    ingested, errors = [], []
+    total_chunks = 0
+    for p in paths:
+        pp = pathlib.Path(p)
+        try:
+            pp_resolved = pp.resolve()
+        except Exception:
+            errors.append(f"无法解析路径: {p}")
+            continue
+        # 越权保护：只允许 /app 内部
+        if root not in pp_resolved.parents and pp_resolved != root:
+            errors.append(f"跳过越权路径（必须在 /app 内）: {p}")
+            continue
+        targets = []
+        if pp_resolved.is_dir():
+            for f in sorted(pp_resolved.rglob("*")):
+                if not f.is_file():
+                    continue
+                if any(part in _INGEST_SKIP_DIRS for part in f.parts):
+                    continue
+                if f.suffix.lower() not in _INGEST_ALLOWED_EXT:
+                    continue
+                try:
+                    if f.stat().st_size > _INGEST_MAX_BYTES:
+                        continue
+                except Exception:
+                    continue
+                targets.append(f)
+        elif pp_resolved.is_file():
+            targets.append(pp_resolved)
+        else:
+            errors.append(f"路径不存在: {p}")
+            continue
+        for f in targets:
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception as e:
+                errors.append(f"{f}: 读取失败 {e}")
+                continue
+            if not text.strip():
+                continue
+            rel = str(f.relative_to(root))
+            source = f"code::{rel}"
+            try:
+                n, _ = ingest_text_to_store(source, f"# 文件：{rel}\n\n{text}", store)
+                total_chunks += n
+                ingested.append(rel)
+            except Exception as e:
+                errors.append(f"{rel}: 入库失败 {e}")
+    return JSONResponse({
+        "ok": True,
+        "ingested_files": ingested,
+        "file_count": len(ingested),
+        "chunk_count": total_chunks,
+        "errors": errors,
+    })
 
 
 # ---------- 已索引来源列表（需登录）----------
