@@ -91,9 +91,8 @@ async def assistant_chat(request: Request, req: AssistantRequest):
         f"【资料】\n{ctx}\n\n【问题】{req.message}\n【回答】"
     )
 
-    def _clean(text: str) -> str:
-        """流式输出时剥掉双引号，保证最终答案无双引号（用户明确要求）。"""
-        return text.replace('"', "").replace("\u201c", "").replace("\u201d", "")
+    # 流式输出时剥掉所有双引号变体（含全角＂、低位„等），保证最终答案无双引号
+    from app.rag.textclean import strip_double_quotes as _clean
 
     def gen() -> AsyncIterator[str]:
         # 先发轨迹事件：前端据此渲染「思考过程」面板（查询改写/agent 分派/检索/rerank）

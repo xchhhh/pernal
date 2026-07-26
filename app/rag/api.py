@@ -130,8 +130,8 @@ async def api_chat(request: Request, req: ChatRequest):
         f"【资料】\n{ctx}\n\n【问题】{req.question}\n【回答】"
     )
 
-    def _clean(text: str) -> str:
-        return (text or "").replace('"', "").replace("\u201c", "").replace("\u201d", "")
+    # 统一走全站清洗函数：覆盖所有双引号变体（含全角＂、低位„、«» 等）
+    from app.rag.textclean import strip_double_quotes as _clean
 
     sources = rtrace.get("sources", [])
     src_line = ("\n\n资料来源：" + "、".join(s["title"] for s in sources)) if sources else ""
@@ -159,9 +159,10 @@ async def api_agent(request: Request, req: ChatRequest):
     result = agent.invoke({"messages": [("user", req.question)]})
 
     def gen() -> AsyncIterator[str]:
-        # 取最后一条 AI 消息作为最终回答
+        # 取最后一条 AI 消息作为最终回答（同样剥掉双引号，保持全站输出一致）
+        from app.rag.textclean import strip_double_quotes
         msg = result["messages"][-1]
-        yield getattr(msg, "content", str(msg))
+        yield strip_double_quotes(getattr(msg, "content", str(msg)))
 
     return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
 
@@ -192,8 +193,8 @@ async def api_multi_agent(request: Request, req: ChatRequest):
         f"【资料】\n{ctx}\n\n【问题】{req.question}\n【回答】"
     )
 
-    def _clean(text: str) -> str:
-        return (text or "").replace('"', "").replace("\u201c", "").replace("\u201d", "")
+    # 统一走全站清洗函数：覆盖所有双引号变体（含全角＂、低位„、«» 等）
+    from app.rag.textclean import strip_double_quotes as _clean
 
     sources = pipe["retrieval_trace"].get("sources", [])
     src_line = ("\n\n资料来源：" + "、".join(s["title"] for s in sources)) if sources else ""
