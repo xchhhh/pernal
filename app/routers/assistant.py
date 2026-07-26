@@ -14,7 +14,7 @@ import json
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import get_settings
@@ -24,6 +24,19 @@ from app.rag.agent import run_assistant_pipeline
 from app.rag.llm import get_llm
 
 router = APIRouter()
+
+
+@router.get("/assistant", response_class=HTMLResponse)
+async def assistant_page(request: Request) -> HTMLResponse:
+    """个人助手问答页（ChatGPT 式流式对话 UI）。
+
+    渲染 app/templates/assistant.html；真正的数据流走 POST /api/assistant/chat 的 SSE。
+    """
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "assistant.html",
+        {"request": request},
+    )
 
 
 class AssistantRequest(BaseModel):
@@ -41,8 +54,8 @@ def _sse(event: str, data) -> str:
 @limiter.limit("20/minute")          # AI 接口限流：每分钟最多 20 次，防烧钱
 async def assistant_chat(request: Request, req: AssistantRequest):
     """个人助手问答：多智能体检索 → 轨迹回传 → LLM 流式作答。"""
-    # 首次确保向量库已建（9 板块切块入库）
-    await ai_api.ensure_index()
+    # 首次确保向量库已建（9 板块切块入库）；ensure_index 是同步函数，耗时的 embedding 丢到线程避免阻塞事件循环
+    await asyncio.to_thread(ai_api.ensure_index)
     llm = get_llm()
     store = ai_api._get_store()
     emb = ai_api.get_embeddings()

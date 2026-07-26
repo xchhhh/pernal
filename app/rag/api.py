@@ -151,7 +151,7 @@ async def api_agent(request: Request, req: ChatRequest):
 @limiter.limit("10/minute")
 async def api_multi_agent(request: Request, req: ChatRequest):
     """多智能体：主管分派检索员/图谱员协作，最后流式生成回答（与助手共用管线）。"""
-    await ensure_index()
+    ensure_index()
     llm = get_llm()
     store = _get_store()
     emb = get_embeddings()

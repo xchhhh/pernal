@@ -42,4 +42,7 @@ build/
 
 # ---- 部署日志（本地运行产物，不入库）----
 scripts/*.log
+scripts/*.out
 scripts/vps_deploy.out.log
+# 本地临时调试脚本（_ 前缀）不入库
+scripts/_*.py
