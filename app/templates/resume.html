@@ -1,0 +1,54 @@
+{# 简历页：把多个板块拼成一份可打印的简历视图（实习/工作经历已砍，留待补充） #}
+{% extends "base.html" %}
+{% block title %}简历 · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  <h1>简历</h1>
+
+  {# 基本信息 #}
+  {% if basics %}
+  <div class="card">
+    <h3>{{ basics.body.name }} · {{ basics.body.headline }}</h3>
+    <p>{{ basics.body.tagline }}</p>
+    <p>求职意向：{{ basics.body.target_role }} ｜ {{ basics.body.location }}</p>
+  </div>
+  {% endif %}
+
+  {# 教育 #}
+  {% if education and education.body %}
+  <h2 class="section-title">教育背景</h2>
+  {% for e in education.body %}
+    <div class="card">
+      <h3>{{ e.school }} · {{ e.major }}（{{ e.degree }}）</h3>
+      <p>{{ e.duration }} ｜ 核心课：{{ e.courses|join("、") }}</p>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {# 技能 #}
+  {% if skills and skills.body %}
+  <h2 class="section-title">技能</h2>
+  <div class="card">
+    {% for group, items in skills.body.items() %}
+      <div><strong>{{ group }}：</strong>{{ items|join("、") }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# 项目 #}
+  {% if projects %}
+  <h2 class="section-title">项目经历</h2>
+  {% for p in projects %}
+    <div class="card">
+      <h3>{{ p.name }}（{{ p.role }}）</h3>
+      <ul>{% for h in p.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {# 获奖 #}
+  {% if awards and awards.body %}
+  <h2 class="section-title">获奖与证书</h2>
+  <div class="card">{% for a in awards.body %}<p>🏆 {{ a.name }}（{{ a.year }}）</p>{% endfor %}</div>
+  {% endif %}
+{% endblock %}

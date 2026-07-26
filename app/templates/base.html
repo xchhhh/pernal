@@ -1,0 +1,56 @@
+{# 基础布局模板：所有页面都继承它。#}
+{# 设计要点：导航/页脚/深浅色切换只写一次；页面用 block 填内容。#}
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  {# 移动端适配 #}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AI 应用开发门户{% endblock %}</title>
+  <link rel="stylesheet" href="/static/base.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  {# 顶部导航：6 个页面互链；右侧深色模式切换按钮 #}
+  <header class="nav">
+    <a class="brand" href="/">🤖 AI 门户</a>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/about">关于</a>
+      <a href="/projects">项目</a>
+      <a href="/resume">简历</a>
+      <a href="/assistant">问答</a>
+      <a href="/contact">联系</a>
+      <a href="/graph">图谱</a>
+      <a href="/admin">后台</a>
+    </nav>
+    <button id="theme-toggle" type="button" title="切换深色模式">🌙</button>
+  </header>
+
+  {# 页面正文：各子模板填充 #}
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>© 2026 你的名字 · 基于 FastAPI + LangChain + LangGraph + MCP 构建</span>
+  </footer>
+
+  {# 深色模式：仅用 localStorage + 几行原生 JS，零依赖 #}
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var saved = localStorage.getItem('theme');
+      if (saved) root.setAttribute('data-theme', saved);
+      var btn = document.getElementById('theme-toggle');
+      btn.onclick = function () {
+        var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        btn.textContent = next === 'dark' ? '☀️' : '🌙';
+      };
+    })();
+  </script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

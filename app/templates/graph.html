@@ -1,0 +1,43 @@
+{# 知识图谱页：用 Cytoscape.js 把节点-关系网画出来（可拖拽/缩放） #}
+{# 说明：真实图谱数据来自 GraphTriple 表，由 #21 的 M4 模块通过 /api/graph 提供。#}
+{#       这里先用一段示例数据把可视化跑通，证明前端渲染链路没问题。 #}
+{% extends "base.html" %}
+{% block title %}知识图谱 · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  <h1>知识图谱</h1>
+  <p class="notice">🚧 当前为示例数据。#21 阶段将接入真实 GraphTriple（技能/项目/工具关系网）。</p>
+  <div id="graph"></div>
+{% endblock %}
+
+{% block extra_js %}
+  {# Cytoscape.js：图可视化库，从 CDN 引入，避免本地打包体积 #}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+  <script>
+    // 示例图谱：你 → 掌握 → 技能 → 用于 → 项目
+    var elements = [
+      { data: { id: "me", label: "你" } },
+      { data: { id: "py", label: "Python" } },
+      { data: { id: "rag", label: "RAG" } },
+      { data: { id: "proj", label: "AI 门户" } },
+      { data: { id: "e1", source: "me", target: "py", label: "掌握" } },
+      { data: { id: "e2", source: "me", target: "rag", label: "掌握" } },
+      { data: { id: "e3", source: "py", target: "proj", label: "用于" } },
+      { data: { id: "e4", source: "rag", target: "proj", label: "用于" } },
+    ];
+    cytoscape({
+      container: document.getElementById("graph"),
+      elements: elements,
+      style: [
+        { selector: "node", style: {
+            "background-color": "#2563eb", "label": "data(label)",
+            "color": "#fff", "text-valign": "center", "font-size": 12 } },
+        { selector: "edge", style: {
+            "width": 2, "line-color": "#9aa3af", "target-arrow-color": "#9aa3af",
+            "target-arrow-shape": "triangle", "label": "data(label)",
+            "font-size": 10, "color": "#6b7280", "curve-style": "bezier" } },
+      ],
+      layout: { name: "cose", animate: true },
+    });
+  </script>
+{% endblock %}

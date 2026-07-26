@@ -1,0 +1,130 @@
+/* ======================================================================
+   全局样式：用 CSS 变量做明暗双主题，零依赖、零构建。
+   设计目标：轻量（2c2g 友好）、响应式、可读。深浅色靠 [data-theme] 切换。
+   ====================================================================== */
+
+/* 浅色主题变量（默认） */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1f2329;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+  --primary-text: #ffffff;
+  --badge-bg: #eef2ff;
+  --badge-text: #3730a3;
+}
+
+/* 深色主题变量：覆写同一组变量即可，无需改任何组件样式 */
+[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #1a1d23;
+  --text: #e6e8eb;
+  --muted: #9aa3 af;
+  --muted: #9aa3af;
+  --border: #2a2f37;
+  --primary: #3b82f6;
+  --primary-text: #ffffff;
+  --badge-bg: #1e293b;
+  --badge-text: #c7d2fe;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* 顶部导航 */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.nav .brand { font-weight: 700; font-size: 1.1rem; text-decoration: none; color: var(--text); }
+.nav nav { display: flex; gap: 1rem; flex: 1; }
+.nav nav a { color: var(--muted); text-decoration: none; }
+.nav nav a:hover { color: var(--primary); }
+#theme-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+/* 内容容器 */
+.container { max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; }
+.footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 2rem 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: 3rem;
+}
+
+/* 卡片 */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.card h3 { margin-top: 0; }
+
+/* Hero（首页大标题区） */
+.hero { text-align: center; padding: 2.5rem 1rem; }
+.hero h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+.hero p { color: var(--muted); }
+
+/* 标签 / 徽章 */
+.badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.badge {
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+/* 区块标题 */
+.section-title { border-left: 4px solid var(--primary); padding-left: 0.6rem; margin-top: 2rem; }
+
+/* 表单 */
+form.contact { display: flex; flex-direction: column; gap: 0.75rem; max-width: 480px; }
+form.contact input, form.contact textarea {
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+form.contact button {
+  align-self: flex-start;
+  background: var(--primary);
+  color: var(--primary-text);
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+}
+.notice { background: var(--badge-bg); color: var(--badge-text); padding: 0.75rem 1rem; border-radius: 8px; }
+
+/* 图谱画布 */
+#graph { width: 100%; height: 70vh; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }

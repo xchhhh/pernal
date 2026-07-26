@@ -1,0 +1,28 @@
+# ======================================================================
+# Caddyfile —— 反向代理 + HTTPS 配置
+#
+# 🔑 关键设计：站点地址用 {$SITE_DOMAIN:80} 一处切换，无需改代码、无需改框架
+#   - SITE_DOMAIN 为空（默认）  → 监听 :80 纯 HTTP，公网 IP 直接访问（门户立即可用）
+#   - SITE_DOMAIN=你的名字.duckdns.org → Caddy 自动 ACME 申请并续期 HTTPS 证书
+#
+# 为什么走 duckdns 而不是硬扛裸 IP：Let's Encrypt 不给裸 IP 发证书，但给子域发。
+# 你只需要在 duckdns.org 免费注册一个子域，把 A 记录指向公网 IP，再在 .env 里填
+# SITE_DOMAIN=xxx.duckdns.org 和 ACME_EMAIL=你的邮箱，重启 compose 即自动上 HTTPS。
+# ======================================================================
+
+# 全局配置：ACME 联系邮箱（仅申请证书时需要；用环境变量占位，没填子域时无害）
+{
+    email {$ACME_EMAIL:admin@example.com}
+}
+
+# 站点块：地址来自环境变量，默认 :80（HTTP）
+{$SITE_DOMAIN:80} {
+    # 反向代理到 compose 网络内的应用容器（服务名 app，容器内端口 8000）
+    reverse_proxy app:8000
+
+    # 说明：
+    # - 空域名时这里是 ":80 { reverse_proxy app:8000 }" → 纯 HTTP 反代
+    # - 填子域时这里是 "xxx.duckdns.org { reverse_proxy app:8000 }" → Caddy 见域名自动启用 TLS
+    #   证书申请/续期全自动，不用在这里手写 tls 指令
+    # 如需开启 gzip 压缩（可选），可在 reverse_proxy 下方加一行：encode gzip
+}

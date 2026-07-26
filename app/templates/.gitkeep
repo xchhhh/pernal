@@ -1,0 +1,2 @@
+# 模板目录占位文件。#20 阶段会在此放入 base.html / home.html / about.html 等 Jinja2 模板。
+# 保留此文件，确保目录在 git 中留存、且应用启动时 Jinja2Templates 能找到目录。

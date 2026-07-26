@@ -1,0 +1,27 @@
+{# 联系我：表单提交到 POST /contact；提交成功后显示提示（不刷新整页由前端后续做） #}
+{% extends "base.html" %}
+{% block title %}联系我 · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  <h1>联系我</h1>
+
+  {# 提交成功提示：由 POST 处理后在模板里传 submitted=True 触发 #}
+  {% if submitted %}
+    <div class="notice">✅ 已收到你的留言，我会尽快回复！</div>
+  {% endif %}
+
+  {# 联系表单：用 Form 提交，后端落库（SMTP 配了再发邮件） #}
+  <form class="contact" method="post" action="/contact">
+    <input type="text" name="name" placeholder="你的名字" required>
+    <input type="email" name="email" placeholder="你的邮箱" required>
+    <textarea name="message" rows="5" placeholder="想说的话…" required></textarea>
+    <button type="submit">发送</button>
+  </form>
+
+  {# 技术输出里的联系方式（有则展示） #}
+  {% if outputs and outputs.body %}
+    <p style="margin-top:1.5rem">
+      GitHub：<a href="{{ outputs.body.github }}">{{ outputs.body.github }}</a>
+    </p>
+  {% endif %}
+{% endblock %}

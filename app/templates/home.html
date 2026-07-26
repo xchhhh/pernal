@@ -1,0 +1,57 @@
+{# 首页：用 basics 板块做 Hero，下方展示技术栈与项目数，引导到 AI 模块 #}
+{% extends "base.html" %}
+{% block title %}{{ basics.title if basics else "首页" }} · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  {# Hero 区：个人一句话定位 #}
+  <section class="hero">
+    <h1>{{ basics.body.name if basics else "你的名字" }}</h1>
+    <p>{{ basics.body.headline if basics else "AI 应用开发工程师" }}</p>
+    <p>{{ basics.body.tagline if basics else "" }}</p>
+    {# 求职意向 + 所在地 #}
+    {% if basics %}
+    <p class="badges">
+      <span class="badge">求职意向：{{ basics.body.target_role }}</span>
+      <span class="badge">📍 {{ basics.body.location }}</span>
+    </p>
+    {% endif %}
+  </section>
+
+  {# AI 能力亮点：把门户的四大 AI 模块亮出来，面试官一眼看到 #}
+  <h2 class="section-title">能力亮点</h2>
+  <div class="card">
+    <p>本门户本身就是一个可运行的 AI 应用，内置企业常用栈：</p>
+    <div class="badges">
+      <span class="badge">RAG 检索增强问答</span>
+      <span class="badge">LangGraph Agent + MCP 工具</span>
+      <span class="badge">多 Agent 协作</span>
+      <span class="badge">知识图谱（GraphRAG）</span>
+    </div>
+  </div>
+
+  {# 技术栈矩阵（来自 skills 板块） #}
+  {% if skills and skills.body %}
+  <h2 class="section-title">技术栈</h2>
+  <div class="card">
+    {% for group, items in skills.body.items() %}
+      <div><strong>{{ group }}：</strong>
+        <span class="badges">
+          {% for it in items %}<span class="badge">{{ it }}</span>{% endfor %}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# 项目速览（来自 projects 板块） #}
+  {% if projects %}
+  <h2 class="section-title">项目（{{ projects|length }}）</h2>
+  {% for p in projects %}
+    <div class="card">
+      <h3>{{ p.name }}</h3>
+      <p>{{ p.role }}</p>
+      <div class="badges">{% for s in p.stack %}<span class="badge">{{ s }}</span>{% endfor %}</div>
+    </div>
+  {% endfor %}
+  {% endif %}
+{% endblock %}

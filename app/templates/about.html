@@ -1,0 +1,63 @@
+{# 关于我：教育、技术栈、获奖、技术输出、自我评价 #}
+{% extends "base.html" %}
+{% block title %}关于我 · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  <h1>关于我</h1>
+
+  {# 教育背景 #}
+  {% if education and education.body %}
+  <h2 class="section-title">教育背景</h2>
+  {% for e in education.body %}
+    <div class="card">
+      <h3>{{ e.school }} · {{ e.major }}（{{ e.degree }}）</h3>
+      <p>{{ e.duration }}</p>
+      <div class="badges">
+        {% for c in e.courses %}<span class="badge">{{ c }}</span>{% endfor %}
+      </div>
+      {% if e.honors %}<p>荣誉：{{ e.honors|join("、") }}</p>{% endif %}
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {# 技术栈矩阵 #}
+  {% if skills and skills.body %}
+  <h2 class="section-title">技术栈矩阵</h2>
+  <div class="card">
+    {% for group, items in skills.body.items() %}
+      <div><strong>{{ group }}：</strong>
+        <span class="badges">{% for it in items %}<span class="badge">{{ it }}</span>{% endfor %}</span>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# 获奖与证书 #}
+  {% if awards and awards.body %}
+  <h2 class="section-title">获奖与证书</h2>
+  <div class="card">
+    {% for a in awards.body %}<p>🏆 {{ a.name }}（{{ a.year }}）</p>{% endfor %}
+  </div>
+  {% endif %}
+
+  {# 技术输出 #}
+  {% if outputs and outputs.body %}
+  <h2 class="section-title">技术输出</h2>
+  <div class="card">
+    <p>GitHub：<a href="{{ outputs.body.github }}">{{ outputs.body.github }}</a></p>
+    <p>博客：<a href="{{ outputs.body.blog }}">{{ outputs.body.blog }}</a></p>
+    {% if outputs.body.opensource %}<p>开源：{{ outputs.body.opensource|join("、") }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {# 自我评价 #}
+  {% if self_eval and self_eval.body %}
+  <h2 class="section-title">自我评价</h2>
+  <div class="card">
+    <p>{{ self_eval.body.summary }}</p>
+    <div class="badges">
+      {% for s in self_eval.body.strengths %}<span class="badge">{{ s }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}

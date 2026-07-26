@@ -1,0 +1,14 @@
+# .dockerignore —— 打镜像时排除这些，避免把本地垃圾/密钥带进镜像
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+# 本地数据库和向量库不要打进镜像（运行时由卷挂载，数据在宿主机持久化）
+app/data/portal.db
+app/data/chroma
+# 密钥文件绝不进镜像
+.env
+# 编辑器和系统垃圾
+.DS_Store
+*.swp

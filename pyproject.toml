@@ -1,0 +1,57 @@
+# ======================================================================
+# 个人 AI 应用开发门户 · 工程依赖清单
+# 说明：这个文件用「声明式」列出项目需要的所有 Python 包。
+#       pip 会照着这里安装；每个依赖后面都写了「为什么需要它」。
+# ======================================================================
+
+[build-system]
+# 构建后端：用标准 setuptools 把项目打包（CI/CD 构建镜像时需要）
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-portal"                 # 项目名（容器/镜像名会用它）
+version = "0.1.0"                  # 版本号，回滚时靠它区分镜像
+description = "个人 AI 应用开发门户：作品集+简历+可交互 AI 演示（RAG/LangGraph/MCP/知识图谱）"
+requires-python = ">=3.11"        # 最低 Python 版本（3.11+ 语法更稳）
+
+# ---- 运行时依赖（生产容器里必须有的包）----
+dependencies = [
+    "fastapi>=0.110",          # Web 框架：提供 SSR 页面路由 + AI 流式 API
+    "uvicorn[standard]>=0.29", # ASGI 服务器：真正把 FastAPI 跑起来（[standard] 含 websocket 等额外能力）
+    "jinja2>=3.1",             # 服务端模板引擎：在服务器把 HTML 渲染好再返回（SSR）
+    "python-dotenv>=1.0",      # 开发期读 .env 文件（生产靠环境变量，这里只是兜底）
+    "pydantic-settings>=2.2",  # 配置管理：从环境变量/.env 读配置，带类型校验（12-factor）
+    "slowapi>=0.1.9",          # 限流：给 API 和联系表单加频率限制，防刷
+    "sqlalchemy>=2.0",         # ORM：用 Python 类操作 SQLite（业务表 + 图谱三元组表）
+    "python-multipart>=0.0.9", # 解析表单 Form 数据（联系表单 POST 必装）
+    "chromadb>=0.5",           # 向量库：存简历/项目切块后的 embedding（进程内 PersistentClient，不引独立服务）
+    "langchain>=0.3",          # RAG 编排：用 LCEL 把「检索→拼提示→调 LLM」串成链
+    "langchain-community>=0.3",# LangChain 社区组件：更多检索器/工具实现
+    "langchain-openai>=0.2",   # ChatOpenAI：通过 OpenAI 兼容接口接 DeepSeek（LLM + Embedding）
+    "langgraph>=0.2",          # 智能体编排：M2 单 agent + M3 多 agent（supervisor 模式）
+    "mcp>=1.2",                # 官方 MCP SDK：用 FastMCP 把 10 个工具暴露成标准 MCP 协议
+    "langchain-mcp-adapters>=0.0.9", # 桥接层：把 MCP server 的工具直接变成 LangGraph 能调的 tool
+    "networkx>=3.3",           # 图计算：在内存里遍历知识图谱的节点/边（M4）
+    "structlog>=24.1",         # 结构化日志：输出 JSON 格式日志，方便以后接采集系统
+    "requests>=2.31",          # 调 MinerU / 百度 Paddle 等云端 PDF 解析 API
+    "PyMuPDF>=1.24",           # PDF 本地提取（云端解析不可用时的兜底，零额外模型）
+    "sentence-transformers>=2.5", # 交叉编码器 rerank（bge-reranker-v2-m3，rerank 质量关键）
+]
+
+# ---- 开发期依赖（只在本地/CI 测试时用，不进生产镜像）----
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",    # 单元测试框架
+    "httpx>=0.27",    # 测试时模拟 HTTP 请求（测 API 用）
+    "ruff>=0.4",      # 代码风格/错误检查（lint）
+]
+
+# ---- 工具配置 ----
+[tool.ruff]
+line-length = 100               # 单行最长 100 字符（中文注释多，放宽到 100）
+target-version = "py311"        # 按 Python 3.11 语法检查
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]           # 测试文件放 tests/ 目录
+addopts = "-q"                  # 默认安静模式运行

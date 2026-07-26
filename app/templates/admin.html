@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理后台</title>
+  <link rel="stylesheet" href="/static/base.css">
+</head>
+<body style="background:var(--bg);color:var(--text);margin:0;">
+  <header class="chat-topbar">
+    <div class="chat-brand">🛠 管理后台</div>
+    <div class="chat-top-actions">
+      <a href="/assistant" class="btn-ghost">去问答</a>
+      <a href="/" class="btn-ghost">返回门户</a>
+      <a href="/admin/login" class="btn-ghost">重新登录</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <h3>上传 PDF（实时更新向量库）</h3>
+      <p class="chat-hint">解析顺序：MinerU 云端 API → 百度 Paddle → PyMuPDF 本地提取（没配密钥时自动走 PyMuPDF）。上传后切块实时写进 Chroma + BM25。</p>
+      <input type="file" id="pdf" accept="application/pdf">
+      <button id="upload" class="btn-send" style="margin-top:.6rem;">上传并入库</button>
+      <div id="upload-result" style="margin-top:.6rem;"></div>
+    </div>
+
+    <div class="card">
+      <h3>已索引来源</h3>
+      <ul id="sources"><li>加载中…</li></ul>
+      <button id="reindex" class="btn-send" style="margin-top:.4rem;">重建索引（板块 + 已上传文档）</button>
+      <div id="reindex-result" style="margin-top:.6rem;"></div>
+    </div>
+  </main>
+
+  <script>
+    // 加载已索引来源
+    function loadSources() {
+      fetch("/api/admin/sources").then(function (r) {
+        if (!r.ok) throw new Error("未登录");
+        return r.json();
+      }).then(function (list) {
+        var ul = document.getElementById("sources");
+        if (!list.length) { ul.innerHTML = "<li>暂无上传文档</li>"; return; }
+        ul.innerHTML = list.map(function (d) {
+          return "<li><b>" + d.source_name + "</b> · " + d.chunk_count + " 块 · " + d.created_at + "</li>";
+        }).join("");
+      }).catch(function (e) {
+        document.getElementById("sources").innerHTML = "<li style='color:red'>" + e.message + "</li>";
+      });
+    }
+    loadSources();
+
+    // 上传 PDF
+    document.getElementById("upload").onclick = function () {
+      var f = document.getElementById("pdf").files[0];
+      var box = document.getElementById("upload-result");
+      if (!f) { box.innerHTML = "<span style='color:red'>请先选择 PDF 文件</span>"; return; }
+      box.innerHTML = "上传中…（解析+切块可能需几秒）";
+      var fd = new FormData();
+      fd.append("file", f);
+      fetch("/api/admin/upload", { method: "POST", body: fd }).then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.ok) box.innerHTML = "✅ 已入库：<b>" + j.source + "</b>，切成 " + j.chunks + " 块";
+          else box.innerHTML = "<span style='color:red'>失败：" + j.error + "</span>";
+          loadSources();
+        }).catch(function (e) { box.innerHTML = "<span style='color:red'>错误：" + e + "</span>"; });
+    };
+
+    // 重建索引
+    document.getElementById("reindex").onclick = function () {
+      var box = document.getElementById("reindex-result");
+      box.innerHTML = "重建中…";
+      fetch("/api/admin/reindex", { method: "POST" }).then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.ok) box.innerHTML = "✅ 已重建索引，共 " + j.reindexed_chunks + " 块";
+          else box.innerHTML = "<span style='color:red'>失败：" + j.error + "</span>";
+        }).catch(function (e) { box.innerHTML = "<span style='color:red'>错误：" + e + "</span>"; });
+    };
+  </script>
+</body>
+</html>

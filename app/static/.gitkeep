@@ -1,0 +1,2 @@
+# 静态资源目录占位文件。后续放 CSS / JS（含 Cytoscape.js 图谱库）/ 图片。
+# 保留此文件，确保目录在 git 中留存、且应用启动时 StaticFiles 能挂载。

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理员登录</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <style>
+    .login-wrap { max-width: 380px; margin: 12vh auto; }
+    .login-wrap input { width: 100%; padding: 0.6rem; margin: 0.6rem 0;
+      border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+    .login-wrap button { width: 100%; background: var(--primary); color: var(--primary-text);
+      border: none; border-radius: 8px; padding: 0.6rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap card">
+    <h2>管理员登录</h2>
+    <form method="post" action="/api/admin/login">
+      <input type="password" name="token" placeholder="管理员口令" required autofocus>
+      <button type="submit">登录</button>
+    </form>
+    <p class="chat-hint">口令在 .env 的 ADMIN_TOKEN 配置（默认 admin123，生产请尽快改成随机长串）</p>
+  </div>
+</body>
+</html>

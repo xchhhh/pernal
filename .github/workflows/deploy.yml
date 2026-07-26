@@ -1,0 +1,58 @@
+# ======================================================================
+# GitHub Actions —— 构建镜像并自动部署到 VPS
+# 流程：push 到 main → 登录 GHCR → 构建并推送镜像 → SSH 到 VPS 拉取并重启
+# 密钥（在仓库 Settings → Secrets 配置）：
+#   VPS_HOST      VPS 公网 IP
+#   VPS_USER      SSH 登录用户名（如 root 或普通用户）
+#   VPS_SSH_KEY   SSH 私钥（对应 VPS 上已授权的公钥）
+# 说明：GHCR 登录用内置 GITHUB_TOKEN，无需额外配置
+# ======================================================================
+
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]          # 只在这些分支 push 时触发部署
+
+permissions:
+  contents: read
+  packages: write             # 推送镜像到 GHCR 需要写包权限
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) 拉取代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) 登录 GitHub 容器仓库（GHCR）
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3) 构建并推送镜像到 GHCR
+      #    context 指向 portfolio/（Dockerfile 在此目录内）
+      #    tag 用 owner/portfolio:latest，与 docker-compose.yml 里的 image 一致
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./portfolio
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/portfolio:latest
+
+      # 4) SSH 到 VPS 执行部署：进入项目目录 → 拉取新镜像 → 重启容器
+      #    前置：VPS 上需有 /opt/portfolio 目录，内含 docker-compose.yml、Caddyfile、.env
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/portfolio
+            docker compose pull
+            docker compose up -d

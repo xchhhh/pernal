@@ -1,0 +1,83 @@
+# ======================================================================
+# docker-compose.yml —— 编排两个容器：Caddy（反代/HTTPS）+ 应用（FastAPI+Chroma 进程内）
+# 设计原则：
+#   1) 每个容器都设 mem_limit，把 Chroma 这个内存大户锁在 1.5G 内，防止吃穿 2G
+#   2) 数据用命名卷（named volume）持久化，容器删了数据还在
+#   3) 不互相 depends_on（避免循环依赖）；Caddy 的 reverse_proxy 自带上游重试
+#   4) 密钥全部来自宿主机环境变量（.env 或 shell），不写死在文件里
+# ======================================================================
+
+services:
+  # ---- 应用容器 ----
+  app:
+    build: .                              # 本地构建时用（CI 里则直接 pull 已推好的镜像）
+    image: portfolio:latest               # 本地构建的镜像 tag（全小写；GHCR 推送仅在 CI 里用，VPS 直接 build 本地标签）
+    restart: unless-stopped               # 挂了自动拉起（弥补"单副本无 HA"的短板）
+    mem_limit: 2560m                      # 内存硬上限 ≈2.5G（含 Python+LangChain+Chroma+交叉编码器 rerank 模型）；
+                                          # 2c2g 下需配合宿主机 swap（部署脚本会建 2G swap）才稳，否则 rerank 会降级为 LLM 重排
+    environment:
+      - ENVIRONMENT=production
+      # SQLite 用绝对路径（四个斜杠：sqlite:/// + /app/data/portal.db）
+      - DATABASE_URL=sqlite:////app/data/portal.db
+      - CHROMA_PERSIST_DIR=/app/chroma_data
+      # 以下从宿主机环境变量注入（compose 自动读取同目录的 .env）
+      - SITE_DOMAIN=${SITE_DOMAIN:-}
+      - SECRET_KEY=${SECRET_KEY}
+      # 管理员后台口令（登录后台用；生产务必改成随机长串）
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-admin123}
+      # rerank 后端：cross-encoder（本地 bge-reranker）/ llm（DeepSeek 打分降级）
+      - RERANK_BACKEND=${RERANK_BACKEND:-cross-encoder}
+      - HF_ENDPOINT=https://hf-mirror.com   # 国内拉 bge-reranker 模型权重走镜像
+      # LLM（DeepSeek，OpenAI 兼容）
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_MODEL=${LLM_MODEL}
+      # Embedding（火山引擎 Ark 豆包，与 LLM 不是同一家，必须单独注入）
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      # PDF 云端解析（MinerU / 百度 Paddle），都不填则自动降级 PyMuPDF 本地提取
+      - MINERU_API_KEY=${MINERU_API_KEY:-}
+      - MINERU_API_URL=${MINERU_API_URL:-}
+      - PADDLE_API_KEY=${PADDLE_API_KEY:-}
+      - PADDLE_API_URL=${PADDLE_API_URL:-}
+      - RATE_LIMIT_PER_MINUTE=60
+    volumes:
+      - app_data:/app/data                # 业务库持久化
+      - app_chroma:/app/chroma_data       # 向量库持久化
+    expose:
+      - "8000"                            # 只对内网（Caddy）暴露，不映射到宿主机端口
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ---- 反向代理 / HTTPS 容器 ----
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    mem_limit: 128m                       # Caddy 很轻，128M 足够
+    ports:
+      - "80:80"                           # HTTP（无域名时 IP 直接访问这里）
+      - "443:443"                         # HTTPS（填了 duckdns 子域后自动启用）
+    environment:
+      - SITE_DOMAIN=${SITE_DOMAIN:-:80}       # 传给 Caddyfile 的 {$SITE_DOMAIN} 占位（默认 :80 纯 HTTP；填子域自动 HTTPS）
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}  # 申请证书用的联系邮箱（填子域时才生效；纯 IP 部署可留空）
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro   # 只读挂载配置
+      - caddy_data:/data                      # 证书缓存（续期用，必须持久化）
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# ---- 命名卷：数据持久化，与容器生命周期解耦 ----
+volumes:
+  app_data:
+  app_chroma:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,29 @@
+{# 项目经历：逐条卡片展示角色 / 技术栈 / 亮点 / 链接 #}
+{% extends "base.html" %}
+{% block title %}项目经历 · AI 应用开发门户{% endblock %}
+
+{% block content %}
+  <h1>项目经历</h1>
+
+  {% if projects %}
+    {% for p in projects %}
+      <div class="card">
+        <h3>{{ p.name }}</h3>
+        <p><strong>角色：</strong>{{ p.role }}</p>
+        {# 技术栈徽章 #}
+        <div class="badges">
+          {% for s in p.stack %}<span class="badge">{{ s }}</span>{% endfor %}
+        </div>
+        {# 亮点列表 #}
+        <ul>
+          {% for h in p.highlights %}<li>{{ h }}</li>{% endfor %}
+        </ul>
+        {% if p.link and p.link != "#" %}
+          <p><a href="{{ p.link }}">查看项目 →</a></p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="notice">项目内容待补充。</div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,47 @@
+<!doctype html>
+{# 个人助手对话页：ChatGPT 式全屏布局（不继承 base.html 的导航，自己有顶栏）#}
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 助手 · 许成合</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/assistant.css">
+</head>
+<body class="chat-body">
+  {# 顶栏：品牌 + 新对话 + 返回门户 + 深浅色 #}
+  <header class="chat-topbar">
+    <div class="chat-brand">🤖 许成合的 AI 助手</div>
+    <div class="chat-top-actions">
+      <button id="new-chat" class="btn-ghost" title="清空对话">新对话</button>
+      <a href="/" class="btn-ghost">返回门户</a>
+      <button id="theme-toggle-chat" class="btn-ghost" title="切换深色模式">🌙</button>
+    </div>
+  </header>
+
+  {# 对话区 #}
+  <main class="chat-main" id="chat-main">
+    <div class="chat-welcome" id="welcome">
+      <h1>问我关于许成合的任何事 👋</h1>
+      <p>支持：查询改写 · 多智能体协作 · 混合检索 · RRF 融合 · rerank 重排</p>
+      <div class="suggest-list">
+        <button class="suggest">他做过哪些 AI 项目？</button>
+        <button class="suggest">他掌握哪些技术栈？</button>
+        <button class="suggest">他的教育背景是什么？</button>
+      </div>
+    </div>
+    <div class="chat-log" id="chat-log"></div>
+  </main>
+
+  {# 输入栏 #}
+  <footer class="chat-inputbar">
+    <div class="chat-input-wrap">
+      <textarea id="chat-input" placeholder="输入你的问题，Enter 发送，Shift+Enter 换行…" rows="1"></textarea>
+      <button id="send-btn" class="btn-send" title="发送">➤</button>
+    </div>
+    <div class="chat-hint">回答由 RAG + 多智能体生成，仅依据本站资料，资料没有就如实说不知道</div>
+  </footer>
+
+  <script src="/static/assistant.js"></script>
+</body>
+</html>

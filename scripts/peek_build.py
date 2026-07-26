@@ -1,0 +1,17 @@
+import paramiko, os
+KEY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "id_ed25519")
+c = paramiko.SSHClient()
+c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+c.connect("114.132.53.126", 22, username="root", key_filename=KEY, timeout=45, banner_timeout=45)
+def run(cmd):
+    _, out, err = c.exec_command(cmd)
+    return (out.read().decode(errors="replace") + err.read().decode(errors="replace"))
+print("=== swap ===")
+print(run("free -h | head -2; swapon --show"))
+print("=== build.log tail ===")
+print(run("tail -n 20 /opt/portfolio/build.log 2>/dev/null"))
+print("=== docker ps ===")
+print(run("docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null"))
+print("=== images ===")
+print(run("docker images --format '{{.Repository}} {{.Size}}' 2>/dev/null | head"))
+c.close()
