@@ -131,4 +131,16 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
     # (f) 父子切分收口：命中的子块回退为父块（完整上下文）并按父块去重
     final = collapse_to_parents(reranked)
     trace["rerank_after"] = [c["id"] for c in final]
+    # 溯源：从最终候选块提取去重后的资料来源（标题 + 板块 key），供前端展示
+    sources, seen = [], set()
+    for c in final:
+        meta = c.get("metadata") or {}
+        key = meta.get("section_key") or meta.get("doc_id") or ""
+        if key and key not in seen:
+            seen.add(key)
+            sources.append({
+                "title": meta.get("title") or meta.get("section_key") or "资料",
+                "section": meta.get("section_key", ""),
+            })
+    trace["sources"] = sources
     return final, trace

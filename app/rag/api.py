@@ -27,7 +27,7 @@ from app.rag.agent import build_agent, local_tools, run_assistant_pipeline
 from app.rag.chunking import chunk_section
 from app.rag.embed import get_embeddings
 from app.rag.llm import get_llm
-from app.rag.retrieval import compress, retrieve
+from app.rag.retrieval import compress, retrieve_with_trace
 from app.rag.store import HybridStore
 from app.services import content
 
@@ -115,20 +115,31 @@ async def api_chat(request: Request, req: ChatRequest):
     ensure_index()
     llm = get_llm()
     store = _get_store()
-    # 1) 检索候选块（含查询改写/RRF/可选重排）
-    candidates = retrieve(req.question, store, get_embeddings(), llm)
+    # 1) 检索候选块（含查询改写/RRF/可选重排），同时拿到溯源来源
+    candidates, rtrace = retrieve_with_trace(req.question, store, get_embeddings(), llm)
     # 2) 压缩成受控长度的上下文
     ctx = compress(candidates) if get_settings().rag_compress else "\n\n".join(c["text"] for c in candidates)
-    # 3) 构造提示：限定只依据资料回答，避免幻觉
+    # 3) 构造提示：限定只依据资料回答，避免幻觉；并禁止双引号
     prompt = (
         "你是个人门户的 AI 助手，只能依据下方【资料】回答，资料里没有就如实说不知道。\n"
+        "严格要求：回答正文中禁止使用任何双引号（英文 \" 或中文 “ ”）包裹词语，直接输出纯文本。\n"
         f"【资料】\n{ctx}\n\n【问题】{req.question}\n【回答】"
     )
+
+    def _clean(text: str) -> str:
+        return (text or "").replace('"', "").replace("\u201c", "").replace("\u201d", "")
+
+    sources = rtrace.get("sources", [])
+    src_line = ("\n\n资料来源：" + "、".join(s["title"] for s in sources)) if sources else ""
 
     def gen() -> AsyncIterator[str]:
         # llm.stream 返回 token 迭代器，逐个 yield 实现打字机效果
         for chunk in llm.stream(prompt):
-            yield chunk.content
+            t = _clean(getattr(chunk, "content", ""))
+            if t:
+                yield t
+        if src_line:
+            yield src_line
 
     return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
 
@@ -170,15 +181,24 @@ async def api_multi_agent(request: Request, req: ChatRequest):
     prompt = (
         "你是「许成合」的个人 AI 助手，只能依据下方【资料】用中文回答；"
         "资料里没有就如实说不知道。语气自然简洁。\n"
+        "严格要求：回答正文中禁止使用任何双引号（英文 \" 或中文 “ ”）包裹词语，直接输出纯文本。\n"
         f"【资料】\n{ctx}\n\n【问题】{req.question}\n【回答】"
     )
+
+    def _clean(text: str) -> str:
+        return (text or "").replace('"', "").replace("\u201c", "").replace("\u201d", "")
+
+    sources = pipe["retrieval_trace"].get("sources", [])
+    src_line = ("\n\n资料来源：" + "、".join(s["title"] for s in sources)) if sources else ""
 
     def gen() -> AsyncIterator[str]:
         try:
             for chunk in llm.stream(prompt):
-                text = getattr(chunk, "content", "")
+                text = _clean(getattr(chunk, "content", ""))
                 if text:
                     yield text
+            if src_line:
+                yield src_line
         except Exception as e:
             yield f"\n[生成出错：{e}]"
 

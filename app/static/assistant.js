@@ -29,6 +29,7 @@
   var busy = false;
   var currentAnswerEl = null;   // 正在流式写入的助手消息容器
   var currentTrace = null;      // 正在生成的消息的思考轨迹
+  var currentSources = null;    // 正在生成的消息的资料来源（溯源）
 
   // ================= 会话持久化 =================
   function loadConvs() {
@@ -83,7 +84,7 @@
     logEl.innerHTML = "";
     welcomeEl.style.display = "none";
     topbarTitle.textContent = c ? c.title : "新对话";
-    if (c) c.messages.forEach(function (m) { addMessage(m.role, m.text, m.trace); });
+    if (c) c.messages.forEach(function (m) { addMessage(m.role, m.text, m.trace, m.sources); });
     renderConvList();
     scrollBottom();
   }
@@ -174,6 +175,7 @@
     var refs = addMessage("assistant", "");
     currentAnswerEl = refs.answer;
     currentTrace = null;
+    currentSources = null;
     refs.bubble.classList.add("empty");
     renderConvList();
 
@@ -219,6 +221,7 @@
             role: "assistant",
             text: currentAnswerEl.dataset.raw || "",
             trace: currentTrace,
+            sources: currentSources,
           });
           saveConvs();
         }
@@ -240,6 +243,9 @@
       if (event === "trace") {
         currentTrace = JSON.parse(data);
         renderTrace(currentTrace, bubble);
+      } else if (event === "sources") {
+        currentSources = JSON.parse(data);
+        renderSources(currentSources, bubble);
       } else if (event === "token") {
         appendToken(data);
       }
@@ -270,6 +276,20 @@
     if (!t || !bubble || bubble.querySelector(".trace")) return;
     bubble.insertAdjacentHTML("beforeend", traceHTML(t));
   }
+
+  // 资料来源（溯源）：把检索命中的板块/文档标题渲染成可点击的溯源列表
+  function renderSources(srcs, bubble) {
+    if (!bubble || !srcs || !srcs.length) return;
+    var old = bubble.querySelector(".sources");
+    if (old) old.parentNode.removeChild(old);
+    var html = '<div class="sources"><span class="sources-label">📚 资料来源：</span>';
+    html += srcs.map(function (s) {
+      return '<span class="source-chip">' + esc(s.title || s.section || "资料") + "</span>";
+    }).join("");
+    html += "</div>";
+    bubble.insertAdjacentHTML("beforeend", html);
+  }
+
 
   function traceHTML(t) {
     var html = '<details class="trace"><summary>🧠 思考过程（查询改写 / 多智能体 / 混合检索 / RRF / rerank）</summary>';
@@ -315,7 +335,7 @@
     });
   }
 
-  function addMessage(role, text, trace) {
+  function addMessage(role, text, trace, sources) {
     var msg = document.createElement("div");
     msg.className = "msg " + role;
     var avatar = document.createElement("div");
@@ -332,6 +352,7 @@
     msg.appendChild(bubble);
     logEl.appendChild(msg);
     if (trace) renderTrace(trace, bubble);   // 会话重放时还原思考面板
+    if (sources && sources.length) renderSources(sources, bubble);  // 还原资料来源
     scrollBottom();
     return { bubble: bubble, answer: answer };
   }

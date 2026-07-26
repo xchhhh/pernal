@@ -80,8 +80,14 @@ async def assistant_chat(request: Request, req: AssistantRequest):
     prompt = (
         "你是「许成合」的个人 AI 助手，只能依据下方【资料】用中文回答访客的问题；"
         "资料里没有就如实说不知道，不要编造。语气自然、简洁。\n"
+        "严格要求：回答正文中禁止使用任何双引号（英文 \" 或中文 “ ”）包裹词语，"
+        "直接输出纯文本；也禁止在词语之间插入多余双引号。\n"
         f"【资料】\n{ctx}\n\n【问题】{req.message}\n【回答】"
     )
+
+    def _clean(text: str) -> str:
+        """流式输出时剥掉双引号，保证最终答案无双引号（用户明确要求）。"""
+        return text.replace('"', "").replace("\u201c", "").replace("\u201d", "")
 
     def gen() -> AsyncIterator[str]:
         # 先发轨迹事件：前端据此渲染「思考过程」面板（查询改写/agent 分派/检索/rerank）
@@ -92,12 +98,14 @@ async def assistant_chat(request: Request, req: AssistantRequest):
             "retrieval": pipe["retrieval_trace"],
             "graph_triples": pipe["graph_triples"],
         })
+        # 发资料来源事件：前端据此渲染「📚 资料来源」溯源列表
+        yield _sse("sources", pipe["retrieval_trace"].get("sources", []))
         # 再逐 token 流式生成最终回答
         try:
             for chunk in llm.stream(prompt):
                 text = getattr(chunk, "content", "")
                 if text:
-                    yield _sse("token", text)
+                    yield _sse("token", _clean(text))
         except Exception as e:
             yield _sse("token", f"\n[生成出错：{e}]")
         yield _sse("done", {})
