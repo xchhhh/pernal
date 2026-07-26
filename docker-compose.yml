@@ -27,15 +27,17 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-admin123}
       # rerank 后端：cross-encoder（本地 bge-reranker）/ llm（DeepSeek 打分降级）
       - RERANK_BACKEND=${RERANK_BACKEND:-cross-encoder}
-      - HF_ENDPOINT=https://hf-mirror.com   # 国内拉 bge-reranker 模型权重走镜像
+      - HF_ENDPOINT=https://hf-mirror.com   # 国内拉 bge 模型权重（embedding/reranker）走镜像
       # LLM（DeepSeek，OpenAI 兼容）
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL}
       - LLM_MODEL=${LLM_MODEL}
-      # Embedding（火山引擎 Ark 豆包，与 LLM 不是同一家，必须单独注入）
-      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
-      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      # Embedding（默认本地向量化；仅在有可用「文本」embedding 模型时切 cloud）
+      - EMBEDDING_BACKEND=${EMBEDDING_BACKEND:-local}
+      - LOCAL_EMBEDDING_MODEL=${LOCAL_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-}
       # PDF 云端解析（MinerU / 百度 Paddle），都不填则自动降级 PyMuPDF 本地提取
       - MINERU_API_KEY=${MINERU_API_KEY:-}
       - MINERU_API_URL=${MINERU_API_URL:-}

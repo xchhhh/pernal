@@ -16,13 +16,25 @@ from app.core.db import engine
 class HybridStore:
     """混合检索存储：同时管理 Chroma 向量集合与 FTS5 关键词索引。"""
 
-    def __init__(self, collection_name: str = "portal", embed_fn=None):
+    def __init__(self, collection_name: str = "portal", embed_fn=None, embed_model_name: str = None):
         s = get_settings()
         # 1) Chroma 进程内持久化客户端（数据落在 chroma_persist_dir 目录）
         self._client = chromadb.PersistentClient(path=s.chroma_persist_dir)
-        # 用余弦距离，语义相似度更直观
-        self._collection = self._client.get_or_create_collection(
-            name=collection_name, metadata={"hnsw:space": "cosine"}
+        # 用余弦距离，语义相似度更直观。
+        # 版本化：把 embedding 模型名记进 collection 元数据。
+        # 若模型/维度变了（比如从假 embedding 切到真实 bge），旧集合维度不匹配会报错，
+        # 这里检测到不一致就删掉旧集合重建，避免「Collection expecting embedding with
+        # dimension of 32, got 512」这类维度冲突把检索链路卡死（VPS 换模型也同理）。
+        try:
+            coll = self._client.get_collection(collection_name)
+            if embed_model_name and coll.metadata.get("embedding_model") != embed_model_name:
+                self._client.delete_collection(collection_name)
+                coll = None
+        except Exception:
+            coll = None
+        self._collection = coll or self._client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine", "embedding_model": embed_model_name},
         )
         # 注入的向量化函数（测试时可传假 embedding）
         self._embed_fn = embed_fn

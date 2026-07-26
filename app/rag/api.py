@@ -46,12 +46,15 @@ _store = None  # 进程内缓存 HybridStore，避免每次请求重建 Chroma �
 
 
 def _get_store() -> HybridStore:
-    """懒加载并返回混合检索存储（首次用真实云端 embedding 初始化）。"""
+    """懒加载并返回混合检索存储（首次用真实 embedding 初始化）。"""
     global _store
     if _store is None:
         emb = get_embeddings()
-        # embed_documents 是 OpenAIEmbeddings 的批量向量化方法，正好匹配 store 的 embed_fn 签名
-        _store = HybridStore(embed_fn=emb.embed_documents)
+        s = get_settings()
+        # 记录当前 embedding 模型名，store 据此做维度版本化（换模型自动重建索引）
+        model_name = s.local_embedding_model if s.embedding_backend == "local" else s.embedding_model
+        # embed_documents 是批量向量化方法，正好匹配 store 的 embed_fn 签名
+        _store = HybridStore(embed_fn=emb.embed_documents, embed_model_name=model_name)
     return _store
 
 

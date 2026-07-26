@@ -32,12 +32,20 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com/v1"  # DeepSeek 的 OpenAI 兼容接口地址
     llm_model: str = "deepseek-chat"                 # 用的模型名
 
-    # ---- 云端 Embedding（火山引擎 Ark 豆包向量模型）----
-    # 注意：Embedding 与 LLM 不是同一家。LLM 用 DeepSeek，Embedding 用火山 Ark，
-    # 两者 base_url / model 必须分别配置，否则 RAG 检索会调用到错误的接口而失败。
+    # ---- Embedding（文本向量化）----
+    # 实测结论：本项目的火山 Ark 账号只有「视觉多模态 embedding」模型
+    # （doubao-embedding-vision-*），它根本不支持 OpenAI 兼容的 /embeddings
+    # 文本接口，且账号也没有任何 doubao-embedding-text-* 文本模型（全部 404）。
+    # 因此文本 RAG 改走「本地 sentence-transformers」，与云端 LLM(DeepSeek) 解耦，
+    # 既不受账号模型权限限制，也不会因为网络把检索链路卡死。
+    #   - embedding_backend="local"  ：默认，用 local_embedding_model 本地向量化（推荐）
+    #   - embedding_backend="cloud"  ：仅在你有可用「文本」embedding 模型时切回云端
+    embedding_backend: str = "local"                 # local / cloud
+    local_embedding_model: str = "BAAI/bge-small-zh-v1.5"  # 本地中文向量模型（小、快、余弦归一化）
+    # 云端 embedding 配置（backend=cloud 时启用；当前账号无可用文本模型，默认不用）
     embedding_api_key: str = ""                      # 火山引擎 Ark 的 API Key
     embedding_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"  # 火山 Ark 的 OpenAI 兼容接口地址
-    embedding_model: str = "doubao-embedding-vision-250615"  # 豆包向量模型名（已验证可用）
+    embedding_model: str = "doubao-embedding-text-240715"  # 若切回云端，填你账号有权限的「文本」embedding 模型名
 
     # ---- RAG 检索管线参数（A7：查询改写→混合检索→RRF→rerank→压缩）----
     rag_chunk_size: int = 500                        # 切块最大字符数（板块内容拍平后滑动窗口）
@@ -49,7 +57,7 @@ class Settings(BaseSettings):
     rag_enable_query_rewrite: bool = True            # 是否开启查询改写（扩写/子问题，提升召回）
     rag_enable_rerank: bool = True                   # 是否开启重排（默认开：rerank 是 RAG 质量关键一环）
     rerank_backend: str = "cross-encoder"            # 重排后端：cross-encoder（本地 bge-reranker）/ llm（用 DeepSeek 打分降级）
-    rerank_cross_encoder_model: str = "BAAI/bge-reranker-v2-m3"  # 交叉编码器模型名
+    rerank_cross_encoder_model: str = "BAAI/bge-reranker-base"  # 交叉编码器模型名（base 版约 440MB，契合 2c2g；v2-m3 太大易 OOM）
     rag_compress: bool = True                        # 是否压缩上下文（截断/选块，控长度与成本）
 
     # ---- HuggingFace 镜像（国内 VPS 拉模型用，避免 hf.co 被墙）----
