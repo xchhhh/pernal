@@ -34,7 +34,9 @@ from app.rag.chunking import chunk_section         # noqa: E402
 from app.rag.retrieval import rrf_merge            # noqa: E402
 from app.rag.store import HybridStore              # noqa: E402
 from app.rag.mcp_server import mcp as mcp_server   # noqa: E402
-from app.rag.agent import build_agent, build_supervisor, local_tools  # noqa: E402
+# build_supervisor 已在多 Agent 重写时移除（改为 _build_graph 内部 StateGraph），
+# 这里只保留仍然导出的 build_agent / local_tools
+from app.rag.agent import build_agent, local_tools  # noqa: E402
 from app.rag.llm import get_llm                     # noqa: E402
 from langchain_core.language_models.fake_chat_models import FakeListChatModel  # noqa: E402
 
@@ -103,8 +105,8 @@ def test_hybrid_store_add_and_vector_search():
 def test_graph_build_and_cytoscape():
     g = graph_mod.build_graph()
     assert g.number_of_nodes() > 0
-    # “你的名字”应连出多条关系
-    nb = graph_mod.neighbors("你的名字")
+    # 中心人物节点应连出多条关系（种子里的姓名节点）
+    nb = graph_mod.neighbors("许成合")
     assert len(nb) >= 5
     cyto = graph_mod.to_cytoscape(g)
     assert "elements" in cyto
@@ -112,7 +114,7 @@ def test_graph_build_and_cytoscape():
 
 
 def test_graph_multi_hop():
-    sub = graph_mod.multi_hop("你的名字", max_depth=2)
+    sub = graph_mod.multi_hop("许成合", max_depth=2)  # 种子中心人物节点
     assert sub.number_of_nodes() >= 1
 
 
@@ -130,8 +132,6 @@ def test_agent_graph_compiles():
     fake_llm = FakeBindToolsChatModel(responses=["done"])
     agent = build_agent(fake_llm, local_tools())
     assert hasattr(agent, "invoke")          # 编译后的图才有 invoke
-    sup = build_supervisor(fake_llm, local_tools())
-    assert hasattr(sup, "invoke")
 
 
 # ---------------- 应用装配：非 LLM 端点真机返回 ----------------

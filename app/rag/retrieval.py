@@ -39,6 +39,23 @@ def rewrite_query(question: str, llm) -> str:
     return llm.invoke(prompt).content.strip()
 
 
+def hyde_document(question: str, llm) -> str:
+    """HyDE（Hypothetical Document Embeddings）：让 LLM 先「假想」一段答案文档。
+
+    原理（业界常用召回增强）：问句「他会什么技术」和文档「技术栈：Python、
+    FastAPI…」在向量空间里距离较远；但「假想答案」和真实文档都是**陈述句**，
+    语义距离近得多。拿假想文档去做向量检索，Recall 显著提升。
+    注意：假想内容可能是编的——它只用来「检索」，绝不进入最终上下文。
+    """
+    prompt = (
+        "请针对下面的问题，写一段 80 字以内的「假想资料片段」——像简历或项目文档里"
+        "会出现的陈述句，直接陈述可能的答案内容（编造具体名称也没关系，"
+        "这段话只用于检索匹配，不会展示给用户）。不要解释，直接输出片段。\n"
+        f"问题：{question}\n片段："
+    )
+    return llm.invoke(prompt).content.strip()[:300]
+
+
 # ----------------------------------------------------------------------
 # 3) rerank 重排（已落地为真实交叉编码器重排，见 app/rag/rerank.py）
 # ----------------------------------------------------------------------
@@ -88,8 +105,10 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
     s = get_settings()
     trace = {
         "rewritten": None,
+        "hyde": None,
         "vector_top": [],
         "bm25_top": [],
+        "hyde_top": [],
         "rrf_order": [],
         "rerank_before": [],
         "rerank_after": [],
@@ -102,22 +121,33 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
             trace["rewritten"] = query  # 记录改写后的查询，前端可展示「原问题→改写问题」
         except Exception:
             query = question  # 改写失败就退回原句，保证可用
-    # (b) 两路召回
+    # (b) 多路召回：向量 + BM25 +（可选）HyDE 假想文档向量
     vec = store.vector_search(query, s.rag_top_k_vector)
     bm25 = store.bm25_search(query, s.rag_top_k_bm25)
+    hyde_hits = []
+    if s.rag_enable_hyde and llm is not None:
+        try:
+            hy = hyde_document(question, llm)
+            trace["hyde"] = hy  # 记录假想文档，前端「思考过程」可展示
+            hyde_hits = store.vector_search(hy, s.rag_top_k_vector)
+        except Exception:
+            hyde_hits = []  # HyDE 失败不影响主链路
     trace["vector_top"] = [{"id": r[0], "title": r[2].get("title", ""), "snippet": r[1][:80]} for r in vec]
     trace["bm25_top"] = [{"id": r[0], "title": r[2].get("title", ""), "snippet": r[1][:80]} for r in bm25]
-    # (c) RRF 融合：把两路排名转成 doc_id 列表
-    vec_ids = [r[0] for r in vec]
-    bm25_ids = [r[0] for r in bm25]
-    fused = rrf_merge([vec_ids, bm25_ids], k=s.rag_rrf_k)
+    trace["hyde_top"] = [{"id": r[0], "title": r[2].get("title", ""), "snippet": r[1][:80]} for r in hyde_hits]
+    # (c) RRF 融合：把多路排名转成 doc_id 列表（HyDE 命中作为第三路投票）
+    ranked_lists = [[r[0] for r in vec], [r[0] for r in bm25]]
+    if hyde_hits:
+        ranked_lists.append([r[0] for r in hyde_hits])
+    fused = rrf_merge(ranked_lists, k=s.rag_rrf_k)
     trace["rrf_order"] = fused
     # (d) 用融合顺序重组候选块（去重，保留文本/元数据）
     # 注意：向量侧元数据含 parent_text/parent_id（父子切分），BM25 侧不含；
-    # 先填向量、BM25 仅补缺，确保命中块的完整元数据不被覆盖掉。
+    # 先填向量/HyDE、BM25 仅补缺，确保命中块的完整元数据不被覆盖掉。
     by_id = {}
-    for r in vec:
-        by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": dict(r[2])}
+    for r in list(vec) + list(hyde_hits):
+        if r[0] not in by_id:
+            by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": dict(r[2])}
     for r in bm25:
         if r[0] not in by_id:
             by_id[r[0]] = {"id": r[0], "text": r[1], "metadata": dict(r[2])}
@@ -131,6 +161,11 @@ def retrieve_with_trace(question: str, store, embeddings, llm=None) -> tuple[lis
     # (f) 父子切分收口：命中的子块回退为父块（完整上下文）并按父块去重
     final = collapse_to_parents(reranked)
     trace["rerank_after"] = [c["id"] for c in final]
+    # 评测用：最终排序的稳定 id 列表（优先 parent_id——父块是喂给 LLM 的单位；
+    # 老数据无 parent 信息时退回子块 id）。eval 脚本据此算 Recall/MRR/NDCG。
+    trace["ranked_ids"] = [
+        (c.get("metadata") or {}).get("parent_id") or c["id"] for c in final
+    ]
     # 溯源：从最终候选块提取去重后的资料来源（标题 + 板块 key），供前端展示
     sources, seen = [], set()
     for c in final:

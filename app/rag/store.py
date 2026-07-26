@@ -36,7 +36,9 @@ class HybridStore:
             coll = None
         self._collection = coll or self._client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine", "embedding_model": embed_model_name},
+            # 注意：新版 Chroma（rust 后端）metadata 值不允许 None——
+            # embed_model_name 未传时用空串占位，否则建集合直接 TypeError
+            metadata={"hnsw:space": "cosine", "embedding_model": embed_model_name or ""},
         )
         # 注入的向量化函数（测试时可传假 embedding）
         self._embed_fn = embed_fn
@@ -57,7 +59,8 @@ class HybridStore:
                 pass
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
-                metadata={"hnsw:space": "cosine", "embedding_model": self._embed_model_name},
+                # 同上：metadata 值不允许 None，空串占位
+                metadata={"hnsw:space": "cosine", "embedding_model": self._embed_model_name or ""},
             )
             return self._collection
 

@@ -124,7 +124,9 @@ async def admin_ingest_paths(
 ):
     """把指定路径（容器内文件/目录）的「项目代码 / 项目资料」向量化入库。
 
-    请求体：{"paths": ["/app/app", "/app/requirements_plan.md", ...]}
+    请求体：{"paths": ["/app/app", {"path": "/app/contract.txt", "kind": "contract"}, ...]}
+      - 每项可以是「字符串路径」（自动识别类型）或 {"path", "kind"}（显式指定切分策略）；
+        kind 取值：markdown / code / contract / text；
       - 目录：递归遍历，只收白名单扩展名、排除噪声目录、跳过超大文件；
       - 文件：直接读；
     每个文件作为一个 IngestedDoc 持久化，并实时写入向量库（Chroma+BM25），
@@ -136,6 +138,11 @@ async def admin_ingest_paths(
     ingested, errors = [], []
     total_chunks = 0
     for p in paths:
+        # 每项支持两种形态：纯字符串（自动识别）或 {"path","kind"}（显式指定）
+        forced_kind = None
+        if isinstance(p, dict):
+            forced_kind = p.get("kind") or None
+            p = p.get("path") or ""
         pp = pathlib.Path(p)
         try:
             pp_resolved = pp.resolve()
@@ -177,7 +184,10 @@ async def admin_ingest_paths(
             rel = str(f.relative_to(root))
             source = f"code::{rel}"
             try:
-                n, _ = ingest_text_to_store(source, f"# 文件：{rel}\n\n{text}", store)
+                # kind：显式指定 > 按扩展名/内容自动识别（在 ingest 层完成）
+                n, _ = ingest_text_to_store(
+                    source, f"# 文件：{rel}\n\n{text}", store, kind=forced_kind
+                )
                 total_chunks += n
                 ingested.append(rel)
             except Exception as e:
@@ -222,13 +232,16 @@ async def admin_reindex(request: Request, _: bool = Depends(require_admin)):
                                   parent_size=s.rag_parent_size,
                                   child_size=s.rag_child_size,
                                   child_overlap=s.rag_child_overlap))
-    # 2) 已上传文档（从 ingested_docs 表取原文重新切）
+    # 2) 已上传文档（从 ingested_docs 表取原文，按类型重新切）
+    from app.rag.chunking import chunk_by_kind
+    from app.services.parsers import detect_kind_for_text
     with SessionLocal() as db:
         ingested = db.query(IngestedDoc).all()
     for d in ingested:
-        docs.extend(chunk_text(f"doc::{d.source_name}", d.source_name, d.text,
-                               parent_size=s.rag_parent_size,
-                               child_size=s.rag_child_size,
-                               child_overlap=s.rag_child_overlap))
+        kind = detect_kind_for_text(d.source_name, d.text)
+        docs.extend(chunk_by_kind(kind, f"doc::{d.source_name}", d.source_name, d.text,
+                                  parent_size=s.rag_parent_size,
+                                  child_size=s.rag_child_size,
+                                  child_overlap=s.rag_child_overlap))
     store.add_documents(docs)
     return JSONResponse({"ok": True, "reindexed_chunks": len(docs)})

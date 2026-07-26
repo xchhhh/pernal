@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     rag_child_size: int = 350      # 子块最大字符数（做 embedding / BM25 检索单元）
     rag_child_overlap: int = 50    # 子块之间重叠字符数（避免切断词意）
     rag_enable_query_rewrite: bool = True            # 是否开启查询改写（扩写/子问题，提升召回）
+    rag_enable_hyde: bool = True                     # 是否开启 HyDE（假设文档嵌入）第三路召回：
+                                                     # 用 LLM 先写一段「假想答案」，拿它做向量检索——
+                                                     # 答案和文档的语义距离比「问句↔文档」更近，提升 Recall
     rag_enable_rerank: bool = True                   # 是否开启重排（默认开：rerank 是 RAG 质量关键一环）
     rerank_backend: str = "cross-encoder"            # 重排后端：cross-encoder（本地 bge-reranker）/ llm（用 DeepSeek 打分降级）
     rerank_cross_encoder_model: str = "BAAI/bge-reranker-base"  # 交叉编码器模型名（base 版约 440MB，契合 2c2g；v2-m3 太大易 OOM）
