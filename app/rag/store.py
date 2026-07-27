@@ -8,9 +8,26 @@
 #   - embed_fn 可注入，方便单测时用确定性的假 embedding，无需云端 key。
 # ======================================================================
 import chromadb
+import re
 
 from app.core.config import get_settings
 from app.core.db import engine
+
+# FTS5 语法保留字符：冒号/括号/引号/通配符/逻辑符等，若直接进 MATCH 会被当成语法
+# 解析（如把中文括号里的词误判成「列名」），导致 sqlite3 报错使 BM25 整路崩掉。
+# 这里统一清洗：去掉这些字符，再按中文标点/空白拆词，每个词用双引号包成短语，OR 连接。
+_FTS_SPECIAL = re.compile(r'["\'()*:^}{\[\]\\+.\-]')
+
+
+def _build_fts_query(text: str) -> str:
+    """把任意用户问题转成安全的 FTS5 MATCH 查询串（防止中文括号/标点引发崩溃）。"""
+    cleaned = _FTS_SPECIAL.sub(" ", text or "")
+    # 按空白与中文标点切分，去重后每个词包成短语（双引号），OR 连接
+    toks = re.split(r"[\s，。、；：！？（）《》【】“”‘’…—~]+", cleaned)
+    toks = [t.strip() for t in toks if t.strip()]
+    if not toks:
+        return ""
+    return " OR ".join(f'"{t}"' for t in toks)
 
 
 class HybridStore:
@@ -128,8 +145,7 @@ class HybridStore:
         注意：SQLite FTS5 默认分词器对中文支持弱（按整句匹配）。
         生产可换 jieba 分词器提升中文召回；当前用 MATCH 兜底，配合向量召回弥补。
         """
-        # 把查询按空格/标点拆词，用 OR 连接，提升召回鲁棒性
-        terms = " OR ".join([t for t in text.replace("，", " ").split() if t])
+        terms = _build_fts_query(text)
         if not terms:
             return []
         rows = []
