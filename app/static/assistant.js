@@ -247,7 +247,11 @@
         currentSources = JSON.parse(data);
         renderSources(currentSources, bubble);
       } else if (event === "token") {
-        appendToken(data);
+        // 后端每个 token 是 JSON 字符串（形如 "许"），必须 JSON.parse 还原成纯文本，
+        // 否则 JSON 的包裹引号会原样显示，导致答案里每个字都被双引号包住。
+        var tok;
+        try { tok = JSON.parse(data); } catch (e) { tok = data; }
+        appendToken(tok);
       }
     } catch (e) { /* 忽略单条解析失败 */ }
   }
